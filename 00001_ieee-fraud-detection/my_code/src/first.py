@@ -101,9 +101,36 @@ pd.set_option('display.float_format','{:.2f}'.format)
 # ================================================================================
 # OPTIONS
 
-TRAIN_DATA_SIZE="full"
-# TRAIN_DATA_SIZE="small"
+# --------------------------------------------------------------------------------
+# Full train mode : 
+# USE_TRAIN=True ; TRAIN_DATA_SIZE="full" ; USE_TEST=False ; TEST_DATA_SIZE="small"
+# Fast train mode : 
+# USE_TRAIN=True ; TRAIN_DATA_SIZE="small" ; USE_TEST=False ; TEST_DATA_SIZE="small"
+# Full test mode : 
+USE_TRAIN=False ; TRAIN_DATA_SIZE="small" ; USE_TEST=True ; TEST_DATA_SIZE="full"
+# Fast test mode : 
+# USE_TRAIN=False ; TRAIN_DATA_SIZE="small" ; USE_TEST=True ; TEST_DATA_SIZE="small"
+# Full train and test mode : 
+# USE_TRAIN=True ; TRAIN_DATA_SIZE="full" ; USE_TEST=True ; TEST_DATA_SIZE="full"
+# Fast train and test mode : 
+# USE_TRAIN=True ; TRAIN_DATA_SIZE="small" ; USE_TEST=True ; TEST_DATA_SIZE="small"
 
+# # USE_TRAIN=True
+# USE_TRAIN=False
+
+# TRAIN_DATA_SIZE="full"
+# # TRAIN_DATA_SIZE="small"
+
+# # USE_TEST=True
+# USE_TEST=False
+
+# # TEST_DATA_SIZE="full"
+# TEST_DATA_SIZE="small"
+
+# USE_VALIDATION=True
+USE_VALIDATION=False
+
+# --------------------------------------------------------------------------------
 # CREATE_IMAGE_ON_NAN_RATIO=True
 CREATE_IMAGE_ON_NAN_RATIO=False
 
@@ -128,12 +155,6 @@ HYPERPARAMETER_TUNIING_LGBM=False
 
 # HYPERPARAMETER_TUNIING_LGBM_USE=True
 HYPERPARAMETER_TUNIING_LGBM_USE=False
-
-# PERFORM_FULL_VALIDATION=True
-PERFORM_FULL_VALIDATION=False
-
-PERFORM_FULL_TRAIN=True
-# PERFORM_FULL_TRAIN=False
 
 DEEP_LEARNING_EPOCH=1000
 
@@ -272,7 +293,7 @@ class IEEEVal_Dataset(data.Dataset):
     return self.test_X[idx],self.test_y[idx]
 
 # ================================================================================
-def load_csv_files():
+def load_csv_files_train():
   
   # ================================================================================
   # COLUMNS WITH STRINGS
@@ -379,6 +400,113 @@ def load_csv_files():
 
   return X_train
 
+def load_csv_files_test():
+  
+  # ================================================================================
+  # COLUMNS WITH STRINGS
+
+  str_type = ['ProductCD', 'card1',  'card2', 'card3', 'card4', 'card5', 'card6',
+              'addr1', 'addr2',
+              'P_emaildomain', 'R_emaildomain','M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8', 'M9',
+              'id-12', 'id-14', 'id-15', 'id-16', 'id-21', 'id-22', 'id-23', 'id-24', 'id-25', 'id-26', 'id-27', 'id-28', 'id-29', 'id-30', 'id-31', 'id-32', 'id-33', 'id-34', 'id-35', 'id-36', 'id-37', 'id-38', 
+              'DeviceType', 'DeviceInfo']
+
+  # str_type += ['id-12', 'id-15', 'id-16', 'id-23', 'id-27', 'id-28', 'id-29', 'id-30', 
+  #             'id-31', 'id-33', 'id-34', 'id-35', 'id-36', 'id-37', 'id-38']
+
+  # ================================================================================
+  # FIRST 53 COLUMNS
+
+  id_numeric=["id-"+str(i).zfill(2) for i in range(1,12)]
+
+  cols = ['TransactionID', 'TransactionDT', 'TransactionAmt', 'dist1', 'dist2', 
+        'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10', 'C11',
+        'C12', 'C13', 'C14', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8',
+        'D9', 'D10', 'D11', 'D12', 'D13', 'D14', 'D15']+id_numeric
+
+  # ================================================================================
+  # V COLUMNS TO LOAD DECIDED BY CORRELATION EDA
+  # https://www.kaggle.com/cdeotte/eda-for-columns-v-and-id
+
+  v =  [1, 3, 4, 6, 8, 11]
+  v += [13, 14, 17, 20, 23, 26, 27, 30]
+  v += [36, 37, 40, 41, 44, 47, 48]
+  v += [54, 56, 59, 62, 65, 67, 68, 70]
+  v += [76, 78, 80, 82, 86, 88, 89, 91]
+
+  #v += [96, 98, 99, 104] #relates to groups, no NAN 
+  v += [107, 108, 111, 115, 117, 120, 121, 123] # maybe group, no NAN
+  v += [124, 127, 129, 130, 136] # relates to groups, no NAN
+
+  # LOTS OF NAN BELOW
+  v += [138, 139, 142, 147, 156, 162] #b1
+  v += [165, 160, 166] #b1
+  v += [178, 176, 173, 182] #b2
+  v += [187, 203, 205, 207, 215] #b2
+  v += [169, 171, 175, 180, 185, 188, 198, 210, 209] #b2
+  v += [218, 223, 224, 226, 228, 229, 235] #b3
+  v += [240, 258, 257, 253, 252, 260, 261] #b3
+  v += [264, 266, 267, 274, 277] #b3
+  v += [220, 221, 234, 238, 250, 271] #b3
+
+  v += [294, 284, 285, 286, 291, 297] # relates to grous, no NAN
+  v += [303, 305, 307, 309, 310, 320] # relates to groups, no NAN
+  v += [281, 283, 289, 296, 301, 314] # relates to groups, no NAN
+  #v += [332, 325, 335, 338] # b4 lots NAN
+
+  # print('v',v)
+  # v [1, 3, 4, 6, 8, 11, 13, 14, 17, 20, 23, 26, 27, 30, 36, 37, 40, 41, 44, 47, 48, 54, 56, 59, 62, 65, 67, 68, 70, 76, 78, 80, 82, 86, 88, 89, 91, 107, 108, 111, 115, 117, 120, 121, 123, 124, 127, 129, 130, 136, 138, 139, 142, 147, 156, 162, 165, 160, 166, 178, 176, 173, 182, 187, 203, 205, 207, 215, 169, 171, 175, 180, 185, 188, 198, 210, 209, 218, 223, 224, 226, 228, 229, 235, 240, 258, 257, 253, 252, 260, 261, 264, 266, 267, 274, 277, 220, 221, 234, 238, 250, 271, 294, 284, 285, 286, 291, 297, 303, 305, 307, 309, 310, 320, 281, 283, 289, 296, 301, 314]
+
+  # ================================================================================
+  cols += ['V'+str(x) for x in v]
+
+  dtypes = {}
+  for c in cols:
+      dtypes[c] = 'float32'
+
+  for c in str_type:
+      dtypes[c] = 'category'
+
+  # print('dtypes',dtypes)
+
+  use_cols=cols+str_type
+
+  # ================================================================================
+  # Load train data
+
+  # print('dtypes',dtypes)
+
+  if TEST_DATA_SIZE=="full":
+    # X_train = pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/train_transaction_original.csv', dtype=dtypes, usecols=use_cols+['isFraud'])
+    X_train = pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/test_transaction_original.csv', dtype=dtypes,)
+
+  elif TEST_DATA_SIZE=="small":
+
+    # X_train = pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/train_transaction_small.csv', dtype=dtypes, usecols=use_cols+['isFraud'])
+    X_train = pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/test_transaction.csv', dtype=dtypes)
+
+  train_id = pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/test_identity.csv', dtype=dtypes)
+
+  # X_train = X_train.merge(train_id, how='left', left_index=True, right_index=True)
+  X_train=pd.merge(X_train,train_id,on=['TransactionID'],how='left')
+
+  X_train=X_train.sort_values(by=['TransactionID'],axis=0)
+  # print('X_train',X_train)
+
+  # ================================================================================
+  # Select columns
+
+  X_train=X_train[use_cols]
+  # print('X_train',X_train)
+
+  # ================================================================================
+  # Remove columns
+
+  for c in ['D6','D7','D8','D9','D12','D13','D14','C3','M5','id-08','id-33','card4','id-07','id-14','id-21','id-30','id-32','id-34']+['id-'+str(x) for x in range(22,28)]:
+    del X_train[c]
+
+  return X_train
+
 def check_nan(merged,create_image):
   number_of_rows_from_data=merged.shape[0]
   number_of_columns_from_data=merged.shape[1]
@@ -480,8 +608,14 @@ def separate_full_column_data_into_categorical_and_numerical(csv_train):
   # with pd.option_context('display.max_rows',100000):
   #   print('csv_train',csv_train.dtypes)
 
+  # ================================================================================
+  # Set index
+
   csv_train=csv_train.set_index("TransactionID")
   # print('csv_train',csv_train)
+
+  # ================================================================================
+  # For train data
 
   numerical_data=[]
   categorical_data=[]
@@ -501,75 +635,17 @@ def separate_full_column_data_into_categorical_and_numerical(csv_train):
       # print('csv_train[[one_column_name]]',csv_train[[one_column_name]])
       categorical_data.append(csv_train[[one_column_name]])
 
-  numerical_df=pd.concat(numerical_data,axis=1)
-  categorical_df=pd.concat(categorical_data,axis=1)
+  numerical_train_df=pd.concat(numerical_data,axis=1)
+  categorical_train_df=pd.concat(categorical_data,axis=1)
   # print("numerical_df",numerical_df)
   # print("categorical_df",categorical_df)
 
-  return numerical_df,categorical_df
+  return numerical_train_df,categorical_train_df
 
 def impute_categorical_data_by_mode(under40_nan_categorical_df):
-  # print('under40_nan_categorical_df',under40_nan_categorical_df)
-  #               ProductCD  card1  card2  card3  card5   card6  addr1 addr2  \
-  # TransactionID                                                              
-  # 2987031.00            W   6573  583.0  150.0  226.0  credit  315.0  87.0   
-  # 2987111.00            C  13832  375.0  185.0  224.0   debit    NaN   NaN   
-  # 2987261.00            W  10049  555.0  150.0  226.0   debit  191.0  87.0   
-  # 2987274.00            W  10112  360.0  150.0  166.0   debit  512.0  87.0   
-  # 2987285.00            W  10520  543.0  150.0  224.0   debit  299.0  87.0   
-  # ...                 ...    ...    ...    ...    ...     ...    ...   ...   
-  # 3577426.00            W   7239  452.0  150.0  117.0   debit  264.0  87.0   
-  # 3577436.00            W  10975  555.0  150.0  117.0   debit  264.0  87.0   
-  # 3577443.00            W   1431  492.0  150.0  226.0   debit  343.0  87.0   
-  # 3577451.00            R  16434  399.0  150.0  146.0  credit  299.0  87.0   
-  # 3577466.00            W   7815  161.0  150.0  117.0   debit  123.0  87.0   
-
-  #               P_emaildomain R_emaildomain   M1   M2   M3   M4   M6   M7   M8  \
-  # TransactionID                                                                  
-  # 2987031.00        yahoo.com           NaN    T    T    T  NaN    T    F    T   
-  # 2987111.00      hotmail.com   hotmail.com  NaN  NaN  NaN   M0  NaN  NaN  NaN   
-  # 2987261.00              NaN           NaN    T    T    T   M1    T  NaN  NaN   
-  # 2987274.00      hotmail.com           NaN  NaN  NaN  NaN   M0    F  NaN  NaN   
-  # 2987285.00        gmail.com           NaN    T    T    T   M0    T    F    T   
-  # ...                     ...           ...  ...  ...  ...  ...  ...  ...  ...   
-  # 3577426.00        gmail.com           NaN    T    T    T  NaN    F    F    T   
-  # 3577436.00        gmail.com           NaN    T    T    T   M0    F  NaN  NaN   
-  # 3577443.00          aol.com           NaN    T    T    T  NaN    F    F    F   
-  # 3577451.00        gmail.com     gmail.com  NaN  NaN  NaN  NaN  NaN  NaN  NaN   
-  # 3577466.00        yahoo.com           NaN    T    F    F   M0    T    F    F   
-
-  #                 M9     id_12 id_15     id_16  id_28     id_29        id_31  \
-  # TransactionID                                                                
-  # 2987031.00       T       NaN   NaN       NaN    NaN       NaN          NaN   
-  # 2987111.00     NaN  NotFound   New  NotFound  Found     Found  chrome 62.0   
-  # 2987261.00     NaN       NaN   NaN       NaN    NaN       NaN          NaN   
-  # 2987274.00     NaN       NaN   NaN       NaN    NaN       NaN          NaN   
-  # 2987285.00       T       NaN   NaN       NaN    NaN       NaN          NaN   
-  # ...            ...       ...   ...       ...    ...       ...          ...   
-  # 3577426.00       T       NaN   NaN       NaN    NaN       NaN          NaN   
-  # 3577436.00     NaN       NaN   NaN       NaN    NaN       NaN          NaN   
-  # 3577443.00       T       NaN   NaN       NaN    NaN       NaN          NaN   
-  # 3577451.00     NaN  NotFound   New  NotFound    New  NotFound       google   
-  # 3577466.00       F       NaN   NaN       NaN    NaN       NaN          NaN   
-
-  #               id_35 id_36 id_37 id_38 DeviceType  DeviceInfo  
-  # TransactionID                                                 
-  # 2987031.00      NaN   NaN   NaN   NaN        NaN         NaN  
-  # 2987111.00        F     F     T     T    desktop     Windows  
-  # 2987261.00      NaN   NaN   NaN   NaN        NaN         NaN  
-  # 2987274.00      NaN   NaN   NaN   NaN        NaN         NaN  
-  # 2987285.00      NaN   NaN   NaN   NaN        NaN         NaN  
-  # ...             ...   ...   ...   ...        ...         ...  
-  # 3577426.00      NaN   NaN   NaN   NaN        NaN         NaN  
-  # 3577436.00      NaN   NaN   NaN   NaN        NaN         NaN  
-  # 3577443.00      NaN   NaN   NaN   NaN        NaN         NaN  
-  # 3577451.00        T     F     T     F     mobile  iOS Device  
-  # 3577466.00      NaN   NaN   NaN   NaN        NaN         NaN  
-
-  # [20001 rows x 30 columns]
 
   # ================================================================================
-  # Find mode
+  # Find mode (train)
 
   temp_df1=[]
   # under40_nan_categorical_df_mode=under40_nan_categorical_df.mode().astype(str)
@@ -584,10 +660,10 @@ def impute_categorical_data_by_mode(under40_nan_categorical_df):
 
     temp_df1.append(bb)
   
-  temp_df2=pd.concat(temp_df1,axis=1)
+  temp_train_df2=pd.concat(temp_df1,axis=1)
   # print('temp_df2',temp_df2)
- 
-  return temp_df2
+
+  return temp_train_df2
 
 def impute_numerical_data_by_MICE(under40_nan_numerical_df):
   # print('under40_nan_numerical_df',under40_nan_numerical_df)
@@ -607,7 +683,7 @@ def impute_numerical_data_by_MICE(under40_nan_numerical_df):
   
   return under40_nan_numerical_df
 
-def encode_categorical_data_using_LabelEncoder(imputed_categorical_df):
+def encode_categorical_data_using_LabelEncoder(imputed_categorical_df,datatype):
   # print('imputed_categorical_df',imputed_categorical_df)
 
   # ================================================================================
@@ -693,8 +769,13 @@ def encode_categorical_data_using_LabelEncoder(imputed_categorical_df):
 
   # [20001 rows x 32 columns]
 
-  with open('./pickles/imputed_categorical_df.pkl','wb') as f:
-    pickle.dump(imputed_categorical_df,f)
+  # ================================================================================
+  if datatype=="train":
+    with open('./pickles/imputed_categorical_train_df.pkl','wb') as f:
+      pickle.dump(imputed_categorical_df,f)
+  elif datatype=="test":
+    with open('./pickles/imputed_categorical_test_df.pkl','wb') as f:
+      pickle.dump(imputed_categorical_df,f)
 
   return imputed_categorical_df
 
@@ -1083,7 +1164,7 @@ def reduce_mem_usage(df):
   
   return df
 
-def impute_numerical_data_by_mean(under40_nan_numerical_df):
+def impute_numerical_data_by_mean(under40_nan_numerical_df,datatype):
   # print('under40_nan_numerical_df',under40_nan_numerical_df)
   
   # under40_nan_numerical_df.fillna(under40_nan_numerical_df.mean(),inplace=True)
@@ -1107,8 +1188,12 @@ def impute_numerical_data_by_mean(under40_nan_numerical_df):
   number_of_nan_in_entire_columns=temp_df2.isnull().sum(axis=0).sum()
   assert number_of_nan_in_entire_columns==0,'number_of_nan_in_entire_columns!=0'
 
-  with open('./pickles/imputed_numerical_df.pkl','wb') as f:
-    pickle.dump(temp_df2,f)
+  if datatype=="train":
+    with open('./pickles/imputed_numerical_train_df.pkl','wb') as f:
+      pickle.dump(temp_df2,f)
+  elif datatype=="test":
+    with open('./pickles/imputed_numerical_test_df.pkl','wb') as f:
+      pickle.dump(temp_df2,f)
 
   return temp_df2
 
@@ -1467,6 +1552,8 @@ def categorical_other(imputed_categorical_df):
     "id_31":10,
     "DeviceInfo":100}
 
+  # ================================================================================
+  # For train 
 
   column_collection=[]
   # print('imputed_categorical_df',imputed_categorical_df)
@@ -1610,11 +1697,114 @@ def full_train_by_lgbm(normalized_train_X,train_y,best_parameter_dict=None,model
 
   return lgbclf
 
+def prediction_by_lgbm(normalized_train_X):
+  # print('normalized_train_X',normalized_train_X.index)
+  
+  d={'TransactionID':normalized_train_X.index}
+  TransactionID_df=pd.DataFrame(d)
+
+  # ================================================================================
+  # Load model
+  
+  with open('./pickles/trained_model.pkl','rb') as f:
+    lgbclf=pickle.load(f)
+  
+  # ================================================================================
+  # Make prediction on test dataset
+
+  val=lgbclf.predict_proba(normalized_train_X)[:,1]
+  # val=lgbclf.predict_proba(normalized_train_X)[:,:]
+  # print("val",val)
+  # print("val",val.shape)
+  # val [0.00109754 0.01400123 0.00068512 ... 0.09750754 0.07325142 0.10856412]
+  # val (506691,)
+
+  # val_df=pd.DataFrame(val.round())
+  val_df=pd.DataFrame(val)
+  # print('val_df',val_df)
+  #          0
+  # 0     0.00
+  # 1     0.00
+  # 2     0.00
+  # 3     0.00
+  # 4     1.00
+  # ...    ...
+  # 13653 1.00
+  # 13654 0.00
+  # 13655 0.00
+  # 13656 0.00
+  # 13657 0.00
+
+  # [13658 rows x 1 columns]
+
+  prediction_df=pd.concat([TransactionID_df,val_df],axis=1)
+  # print('prediction_df',prediction_df)
+  #        TransactionID    0
+  # 0            3663549 0.00
+  # 1            3663550 0.00
+  # 2            3663551 0.00
+  # 3            3663552 0.00
+  # 4            3663553 1.00
+  # ...              ...  ...
+  # 13653        3677202 1.00
+  # 13654        3677203 0.00
+  # 13655        3677204 0.00
+  # 13656        3677205 0.00
+  # 13657        3677206 0.00
+
+  # [13658 rows x 2 columns]
+
+  return prediction_df
+
+def create_submission(predictions):
+  sub=pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/sample_submission_original.csv')
+  # print('sub',sub)
+  # sub        TransactionID  isFraud
+  # 0            3663549     0.50
+  # 1            3663550     0.50
+  # 2            3663551     0.50
+  # 3            3663552     0.50
+  # 4            3663553     0.50
+  # ...              ...      ...
+  # 13653        3677202     0.50
+  # 13654        3677203     0.50
+  # 13655        3677204     0.50
+  # 13656        3677205     0.50
+  # 13657        3677206     0.50
+
+  # [13658 rows x 2 columns]
+
+  sub=sub.sort_values(by=['TransactionID'],axis=0)
+
+  merged=pd.merge(sub,predictions,on=['TransactionID'],how='left')
+  del merged["isFraud"]
+  merged=merged.rename(columns={0:'isFraud'})
+  # print('merged',merged)
+  #         TransactionID  isFraud
+  # 0             3663549     0.00
+  # 1             3663550     0.00
+  # 2             3663551     0.00
+  # 3             3663552     0.00
+  # 4             3663553     1.00
+  # ...               ...      ...
+  # 506686        4170235      nan
+  # 506687        4170236      nan
+  # 506688        4170237      nan
+  # 506689        4170238      nan
+  # 506690        4170239      nan
+
+  # [506691 rows x 2 columns]
+
+  fn='./results_csv/sample_submission_'+str(datetime.now().strftime('%Y-%m-%d-%H-%M-%S'))+'.csv'
+  merged.to_csv(fn,sep=',',encoding='utf-8',index=False)
+
 # ================================================================================
 # Load csv file
 
-csv_train=load_csv_files()
-# print('csv_train',csv_train)
+csv_train=load_csv_files_train()
+csv_test=load_csv_files_test()
+# print("csv_train",csv_train)
+# print("csv_test",csv_test)
 
 # ================================================================================
 # check NaN in column and row
@@ -1633,51 +1823,70 @@ csv_train=load_csv_files()
 # ================================================================================
 # Separate full column data into categorical data and numerical data 
 
-numerical_df,categorical_df=separate_full_column_data_into_categorical_and_numerical(csv_train)
-numerical_df=numerical_df.astype("float32")
-# print("numerical_df@",numerical_df)
-# print("categorical_df@",categorical_df)
+numerical_train_df,categorical_train_df=separate_full_column_data_into_categorical_and_numerical(csv_train)
+numerical_test_df,categorical_test_df=separate_full_column_data_into_categorical_and_numerical(csv_test)
+numerical_train_df=numerical_train_df.astype("float32")
+numerical_test_df=numerical_test_df.astype("float32")
+# print("numerical_train_df",numerical_train_df)
+# print("categorical_train_df",categorical_train_df)
+# print("numerical_test_df",numerical_test_df)
+# print("categorical_test_df",categorical_test_df)
 
 del csv_train
+del csv_test
 gc.collect()
 
 # ================================================================================
 # Convert time delta
 
-numerical_df=convert_time_delte(numerical_df)
-# print('numerical_df',numerical_df)
+numerical_train_df=convert_time_delte(numerical_train_df)
+numerical_test_df=convert_time_delte(numerical_test_df)
+# print("numerical_train_df",numerical_train_df)
+# print("numerical_test_df",numerical_test_df)
 
 # ================================================================================
 # Impute null of categorical data by mode
 
-imputed_categorical_df=impute_categorical_data_by_mode(categorical_df)
+imputed_categorical_train_df=impute_categorical_data_by_mode(categorical_train_df)
+imputed_categorical_test_df=impute_categorical_data_by_mode(categorical_test_df)
 
-del categorical_df
+del categorical_train_df
+del categorical_test_df
 gc.collect()
 
 # ================================================================================
-imputed_categorical_df=categorical_other(imputed_categorical_df)
-# print('imputed_categorical_df',imputed_categorical_df)
+imputed_categorical_train_df=categorical_other(imputed_categorical_test_df)
+imputed_categorical_test_df=categorical_other(imputed_categorical_test_df)
+# print("imputed_categorical_train_df",imputed_categorical_train_df)
+# print("imputed_categorical_test_df",imputed_categorical_test_df)
 
 # ================================================================================
 # Combine feature to create new features
 
-first_new_feature_added=encode_CB('card1','addr1',imputed_categorical_df)
-categorical_df=encode_CB('card1_addr1','P_emaildomain',first_new_feature_added)
+first_new_feature_added=encode_CB('card1','addr1',imputed_categorical_train_df)
+categorical_train_df=encode_CB('card1_addr1','P_emaildomain',first_new_feature_added)
+
+first_new_feature_added=encode_CB('card1','addr1',imputed_categorical_test_df)
+categorical_test_df=encode_CB('card1_addr1','P_emaildomain',first_new_feature_added)
 
 # ================================================================================
 # Impute null of numerical data by MICE
 
 if IMPUTED_NUMERICAL_DATA_SOURCE=="function":
   if METHOD_FOR_IMPUTE_NUMERICAL_DATA=="mice":
-    imputed_numerical_df=impute_numerical_data_by_MICE(numerical_df)
+    imputed_numerical_train_df=impute_numerical_data_by_MICE(numerical_train_df)
+    imputed_numerical_test_df=impute_numerical_data_by_MICE(numerical_test_df)
   elif METHOD_FOR_IMPUTE_NUMERICAL_DATA=="mean":
-    imputed_numerical_df=impute_numerical_data_by_mean(numerical_df)
+    imputed_numerical_train_df=impute_numerical_data_by_mean(numerical_train_df,"train")
+    imputed_numerical_test_df=impute_numerical_data_by_mean(numerical_test_df,"test")
 elif IMPUTED_NUMERICAL_DATA_SOURCE=="pickle":
-  with open('./pickles/imputed_numerical_df.pkl','rb') as f:
-    imputed_numerical_df=pickle.load(f)
+  with open('./pickles/imputed_numerical_train_df.pkl','rb') as f:
+    imputed_numerical_train_df=pickle.load(f)
+  with open('./pickles/imputed_numerical_test_df.pkl','rb') as f:
+    imputed_numerical_test_df=pickle.load(f)
 
-del numerical_df
+del numerical_train_df
+del numerical_test_df
 gc.collect()
 
 # ================================================================================
@@ -1687,8 +1896,11 @@ gc.collect()
 # del imputed_numerical_df
 # gc.collect()
 
-skewness_managed_numerical_df=imputed_numerical_df
-del imputed_numerical_df
+skewness_managed_numerical_train_df=imputed_numerical_train_df
+skewness_managed_numerical_test_df=imputed_numerical_test_df
+
+del imputed_numerical_train_df
+del imputed_numerical_test_df
 gc.collect()
 
 # ================================================================================
@@ -1701,22 +1913,29 @@ gc.collect()
 # Encode categorical data using LabelEncoder
 
 if ENCODED_CATEGORICAL_DATA_SOURCE=="function":
-  encoded_categorical_data=encode_categorical_data_using_LabelEncoder(imputed_categorical_df)
+  encoded_categorical_train_data=encode_categorical_data_using_LabelEncoder(imputed_categorical_train_df,"train")
+  encoded_categorical_test_data=encode_categorical_data_using_LabelEncoder(imputed_categorical_test_df,"test")
 elif ENCODED_CATEGORICAL_DATA_SOURCE=="pickle":
-  with open('./pickles/imputed_categorical_df.pkl','rb') as f:
-    encoded_categorical_data=pickle.load(f)
+  with open('./pickles/imputed_categorical_train_df.pkl','rb') as f:
+    encoded_categorical_train_data=pickle.load(f)
+  with open('./pickles/imputed_categorical_test_df.pkl','rb') as f:
+    encoded_categorical_test_data=pickle.load(f)
 
-del imputed_categorical_df
+del imputed_categorical_train_df
+del imputed_categorical_test_df
 gc.collect()
 
 # ================================================================================
 # Concatenate numerical and categorical data
 
-concated_numerical_categorical_data=concat_numerical_and_categorical_data(skewness_managed_numerical_df.astype("float32"),encoded_categorical_data)
+concated_numerical_categorical_train_data=concat_numerical_and_categorical_data(skewness_managed_numerical_train_df.astype("float32"),encoded_categorical_train_data)
+concated_numerical_categorical_test_data=concat_numerical_and_categorical_data(skewness_managed_numerical_test_df.astype("float32"),encoded_categorical_test_data)
 # print('concated_numerical_categorical_data',concated_numerical_categorical_data)
 
-del skewness_managed_numerical_df
-del encoded_categorical_data
+del skewness_managed_numerical_train_df
+del encoded_categorical_train_data
+del skewness_managed_numerical_test_df
+del encoded_categorical_test_data
 gc.collect()
 
 # ================================================================================
@@ -1728,12 +1947,17 @@ gc.collect()
 # del concated_numerical_categorical_data
 # gc.collect()
 
+# Prepare normalized_train_X, train_y
+train_y=concated_numerical_categorical_train_data[["isFraud"]]
+del concated_numerical_categorical_train_data["isFraud"]
 
-train_y=concated_numerical_categorical_data[["isFraud"]]
-del concated_numerical_categorical_data["isFraud"]
+normalized_train_X=concated_numerical_categorical_train_data
+del concated_numerical_categorical_train_data
+gc.collect()
 
-normalized_train_X=concated_numerical_categorical_data
-del concated_numerical_categorical_data
+# Prepare normalized_test_X
+normalized_test_X=concated_numerical_categorical_test_data
+del concated_numerical_categorical_test_data
 gc.collect()
 
 # ================================================================================
@@ -1755,9 +1979,11 @@ if RESAMPLING_USE==True:
     smote_train_X,smote_train_y=perform_undersampling_resampling(normalized_train_X,train_y)
 else:
   smote_train_X,smote_train_y=normalized_train_X,train_y
+  smote_test_X=normalized_test_X
 
 del normalized_train_X
 del train_y
+del normalized_test_X
 gc.collect()
 
 # # ================================================================================
@@ -1775,7 +2001,7 @@ if HYPERPARAMETER_TUNIING_LGBM==True:
 # ================================================================================
 # Validation (best parameter, oversampling)
 
-if PERFORM_FULL_VALIDATION==True:
+if USE_VALIDATION==True:
   if HYPERPARAMETER_TUNIING_LGBM_USE==True:
     with open('./pickles/best_parameter_dict.pkl','rb') as f:
       best_parameter_dict=pickle.load(f)
@@ -1786,12 +2012,12 @@ if PERFORM_FULL_VALIDATION==True:
   # ================================================================================
   # See feature importance
 
-  see_feature_importance(trained_classifier,list(normalized_train_X.columns))
+  # see_feature_importance(trained_classifier,list(normalized_train_X.columns))
 
 # ================================================================================
 # Train on full data
 
-if PERFORM_FULL_TRAIN==True:
+if USE_TRAIN==True:
   if HYPERPARAMETER_TUNIING_LGBM_USE==True:
     with open('./pickles/best_parameter_dict.pkl','rb') as f:
       best_parameter_dict=pickle.load(f)
@@ -1802,7 +2028,19 @@ if PERFORM_FULL_TRAIN==True:
   # ================================================================================
   # See feature importance
 
-  see_feature_importance(trained_classifier,list(normalized_train_X.columns))
+  # see_feature_importance(trained_classifier,list(normalized_train_X.columns))
+
+# ================================================================================
+# Make prediction 
+
+if USE_TEST==True:
+  predictions=prediction_by_lgbm(smote_test_X)
+
+# ================================================================================
+# Make submission 
+
+if USE_TEST==True:
+  create_submission(predictions)
 
 # ================================================================================
 # print("normalized_train_X",normalized_train_X)
