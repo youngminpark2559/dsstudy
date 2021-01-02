@@ -102,17 +102,17 @@ pd.set_option('display.float_format','{:.2f}'.format)
 # OPTIONS
 
 # --------------------------------------------------------------------------------
-# Full train mode : 
+# - Full train mode : 
 # USE_TRAIN=True ; TRAIN_DATA_SIZE="full" ; USE_TEST=False ; TEST_DATA_SIZE="small"
-# Fast train mode : 
+# - Fast train mode : 
 # USE_TRAIN=True ; TRAIN_DATA_SIZE="small" ; USE_TEST=False ; TEST_DATA_SIZE="small"
-# Full test mode : 
+# - Full test mode : 
 USE_TRAIN=False ; TRAIN_DATA_SIZE="small" ; USE_TEST=True ; TEST_DATA_SIZE="full"
-# Fast test mode : 
+# - Fast test mode : 
 # USE_TRAIN=False ; TRAIN_DATA_SIZE="small" ; USE_TEST=True ; TEST_DATA_SIZE="small"
-# Full train and test mode : 
+# - Full train and test mode : 
 # USE_TRAIN=True ; TRAIN_DATA_SIZE="full" ; USE_TEST=True ; TEST_DATA_SIZE="full"
-# Fast train and test mode : 
+# - Fast train and test mode : 
 # USE_TRAIN=True ; TRAIN_DATA_SIZE="small" ; USE_TEST=True ; TEST_DATA_SIZE="small"
 
 # # USE_TRAIN=True
