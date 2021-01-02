@@ -934,7 +934,7 @@ def evaluate_by_lgbm(normalized_train_X,train_y,best_parameter_dict=None,model_s
     print("accuracy_score",accuracy_score(y_valid,val.round()))
 
     from sklearn.metrics import confusion_matrix
-    print("confusion_matrix",confusion_matrix(y_valid,val.round()))
+    print("TN FP\nFN TP\n",confusion_matrix(y_valid,val.round()))
 
     from sklearn.metrics import f1_score
     print("f1_score average='macro'",f1_score(y_valid,val.round(),average='macro'))
