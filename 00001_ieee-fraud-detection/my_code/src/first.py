@@ -107,13 +107,13 @@ pd.set_option('display.float_format','{:.2f}'.format)
 # - Fast train mode : 
 # USE_TRAIN=True ; TRAIN_DATA_SIZE="small" ; USE_TEST=False ; TEST_DATA_SIZE="small"
 # - Full test mode : 
-USE_TRAIN=False ; TRAIN_DATA_SIZE="small" ; USE_TEST=True ; TEST_DATA_SIZE="full"
+# USE_TRAIN=False ; TRAIN_DATA_SIZE="small" ; USE_TEST=True ; TEST_DATA_SIZE="full"
 # - Fast test mode : 
 # USE_TRAIN=False ; TRAIN_DATA_SIZE="small" ; USE_TEST=True ; TEST_DATA_SIZE="small"
 # - Full train and test mode : 
 # USE_TRAIN=True ; TRAIN_DATA_SIZE="full" ; USE_TEST=True ; TEST_DATA_SIZE="full"
 # - Fast train and test mode : 
-# USE_TRAIN=True ; TRAIN_DATA_SIZE="small" ; USE_TEST=True ; TEST_DATA_SIZE="small"
+USE_TRAIN=True ; TRAIN_DATA_SIZE="small" ; USE_TEST=True ; TEST_DATA_SIZE="small"
 
 # # USE_TRAIN=True
 # USE_TRAIN=False
@@ -1798,6 +1798,43 @@ def create_submission(predictions):
   fn='./results_csv/sample_submission_'+str(datetime.now().strftime('%Y-%m-%d-%H-%M-%S'))+'.csv'
   merged.to_csv(fn,sep=',',encoding='utf-8',index=False)
 
+def new_feature_label_encoded_year_month_day(numerical_df):
+  # print('numerical_df',numerical_df)
+
+  START_DATE=datetime.strptime('2017-11-30','%Y-%m-%d')
+  Ymd_temp_series=numerical_df['TransactionDT'].apply(lambda x:(START_DATE+timedelta(seconds=x)).strftime('%Y%m%d'))
+  print('Ymd_temp_series',Ymd_temp_series)
+
+  le=preprocessing.LabelEncoder()
+  le.fit(Ymd_temp_series)
+  LabelEncoder()
+  list(le.classes_)
+  ['amsterdam', 'paris', 'tokyo']
+  le.transform(['tokyo', 'tokyo', 'paris'])
+
+
+
+  df['DT_M']=(df['DT_M'].dt.year-2017)*12+df['DT_M'].dt.month 
+  return df
+
+def inspect_time_range(numerical_df):
+  # print('numerical_df',numerical_df)
+
+  START_DATE=datetime.strptime('2017-11-30','%Y-%m-%d')
+  Ymd_temp_series=numerical_df['TransactionDT'].apply(lambda x:(START_DATE+timedelta(seconds=x)).strftime('%Y'))
+  # print('Ymd_temp_series',Ymd_temp_series.value_counts())
+  # 2018    453219
+  # 2017    137321
+
+def test_to_datetime_with_unit_s_argument(numerical_df):
+
+  print(pd.to_datetime(numerical_df['TransactionDT'],unit='s'))
+  # TransactionID
+  # 2987031.00   1970-01-02 00:09:58
+  # 2987111.00   1970-01-02 00:33:03
+  # 2987261.00   1970-01-02 01:08:12
+
+
 # ================================================================================
 # Load csv file
 
@@ -1837,12 +1874,28 @@ del csv_test
 gc.collect()
 
 # ================================================================================
+# Inspect time range
+
+# numerical_train_df=inspect_time_range(numerical_train_df)
+
+# ================================================================================
+# Inspect time range
+
+numerical_train_df=test_to_datetime_with_unit_s_argument(numerical_train_df)
+
+# ================================================================================
 # Convert time delta
 
 numerical_train_df=convert_time_delte(numerical_train_df)
 numerical_test_df=convert_time_delte(numerical_test_df)
 # print("numerical_train_df",numerical_train_df)
 # print("numerical_test_df",numerical_test_df)
+
+# ================================================================================
+# Insert new feature (year+month+day in label encoding form)
+
+numerical_train_df=new_feature_label_encoded_year_month_day(numerical_train_df)
+# new_feature_label_encoded_year_month_day
 
 # ================================================================================
 # Impute null of categorical data by mode
