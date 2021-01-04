@@ -103,7 +103,7 @@ pd.set_option('display.float_format','{:.2f}'.format)
 
 # --------------------------------------------------------------------------------
 # - Full train mode : 
-# USE_TRAIN=True ; TRAIN_DATA_SIZE="full" ; USE_TEST=False ; TEST_DATA_SIZE="small"
+USE_TRAIN=True ; TRAIN_DATA_SIZE="full" ; USE_TEST=False ; TEST_DATA_SIZE="small"
 # - Fast train mode : 
 # USE_TRAIN=True ; TRAIN_DATA_SIZE="small" ; USE_TEST=False ; TEST_DATA_SIZE="small"
 # - Full test mode : 
@@ -113,7 +113,7 @@ pd.set_option('display.float_format','{:.2f}'.format)
 # - Full train and test mode : 
 # USE_TRAIN=True ; TRAIN_DATA_SIZE="full" ; USE_TEST=True ; TEST_DATA_SIZE="full"
 # - Fast train and test mode : 
-USE_TRAIN=True ; TRAIN_DATA_SIZE="small" ; USE_TEST=True ; TEST_DATA_SIZE="small"
+# USE_TRAIN=True ; TRAIN_DATA_SIZE="small" ; USE_TEST=True ; TEST_DATA_SIZE="small"
 
 # # USE_TRAIN=True
 # USE_TRAIN=False
@@ -1571,7 +1571,6 @@ def categorical_other(imputed_categorical_df):
       # print('')
 
       # print('one_column_df.value_counts()<low_threshold[one_column_name]',one_column_df.value_counts()[one_column_df.value_counts()<low_threshold[one_column_name]])
-      # aafaf
 
       # one_column_df[one_column_df.value_counts()<low_threshold[one_column_name]]="Other"
 
@@ -1820,11 +1819,16 @@ def new_feature_label_encoded_year_month_day(numerical_df):
 def inspect_time_range(numerical_df):
   # print('numerical_df',numerical_df)
 
-  START_DATE=datetime.strptime('2017-11-30','%Y-%m-%d')
-  Ymd_temp_series=numerical_df['TransactionDT'].apply(lambda x:(START_DATE+timedelta(seconds=x)).strftime('%Y'))
+  # START_DATE=datetime.strptime('2017-11-30','%Y-%m-%d')
+  # Ymd_temp_series=numerical_df['TransactionDT'].apply(lambda x:(START_DATE+timedelta(seconds=x)).strftime('%Y'))
   # print('Ymd_temp_series',Ymd_temp_series.value_counts())
   # 2018    453219
   # 2017    137321
+
+  START_DATE=datetime.strptime('2017-01-01','%Y-%m-%d')
+  Ymd_temp_series=numerical_df['TransactionDT'].apply(lambda x:(START_DATE+timedelta(seconds=x)).strftime('%Y'))
+  # print('Ymd_temp_series',Ymd_temp_series.value_counts())
+  # Ymd_temp_series 2017    590540
 
 def test_to_datetime_with_unit_s_argument(numerical_df):
 
@@ -1876,7 +1880,7 @@ gc.collect()
 # ================================================================================
 # Inspect time range
 
-# numerical_train_df=inspect_time_range(numerical_train_df)
+numerical_train_df=inspect_time_range(numerical_train_df)
 
 # ================================================================================
 # Inspect time range
