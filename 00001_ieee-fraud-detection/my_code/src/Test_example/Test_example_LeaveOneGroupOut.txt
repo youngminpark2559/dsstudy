@@ -1,0 +1,76 @@
+# ================================================================================
+The number of group : 4
+The number of split : 4
+This number of split 4 is automatically configured. 
+You can't configure the number of split
+LeaveOneGroupOut instantiates without parameter like leave_one_group_out=LeaveOneGroupOut()
+The article says LeaveOneGroupOut is much used for time-series data, when you validate model which has been trained on multiple time domain train data on validation data of another time domain
+LeaveOneGroupOut seems meaning Leave "one group" out for validation data
+
+train (9,)
+test (3,)
+X[test]
+ [[ 1.12031365  5.75806083]
+ [ 1.7373078   4.42546234]
+ [ 2.36833522  0.04356792]
+ [-0.49772229  1.55128226]
+ [-1.4811455   2.73069841]
+ [ 0.87305123  4.71438583]
+ [-0.66246781  2.17571724]
+ [ 0.74285061  1.46351659]
+ [ 2.49913075  1.23133799]]
+y[test]
+ [1 0 2]
+train groups [1 1 1 1 2 2 3 3 3]
+test groups [0 0 0]
+
+train (8,)
+test (4,)
+X[test]
+ [[ 3.54934659  0.6925054 ]
+ [ 1.9263585   4.15243012]
+ [ 0.0058752   4.38724103]
+ [-1.4811455   2.73069841]
+ [ 0.87305123  4.71438583]
+ [-0.66246781  2.17571724]
+ [ 0.74285061  1.46351659]
+ [ 2.49913075  1.23133799]]
+y[test]
+ [0 0 1 1]
+train groups [0 0 0 2 2 3 3 3]
+test groups [1 1 1 1]
+
+train (10,)
+test (2,)
+X[test]
+ [[ 3.54934659  0.6925054 ]
+ [ 1.9263585   4.15243012]
+ [ 0.0058752   4.38724103]
+ [ 1.12031365  5.75806083]
+ [ 1.7373078   4.42546234]
+ [ 2.36833522  0.04356792]
+ [-0.49772229  1.55128226]
+ [-0.66246781  2.17571724]
+ [ 0.74285061  1.46351659]
+ [ 2.49913075  1.23133799]]
+y[test]
+ [2 0]
+train groups [0 0 0 1 1 1 1 3 3 3]
+test groups [2 2]
+
+train (9,)
+test (3,)
+X[test]
+ [[ 3.54934659  0.6925054 ]
+ [ 1.9263585   4.15243012]
+ [ 0.0058752   4.38724103]
+ [ 1.12031365  5.75806083]
+ [ 1.7373078   4.42546234]
+ [ 2.36833522  0.04356792]
+ [-0.49772229  1.55128226]
+ [-1.4811455   2.73069841]
+ [ 0.87305123  4.71438583]]
+y[test]
+ [2 2 1]
+train groups [0 0 0 1 1 1 1 2 2]
+test groups [3 3 3]
