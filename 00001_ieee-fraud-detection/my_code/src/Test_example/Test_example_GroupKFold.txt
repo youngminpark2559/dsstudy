@@ -1,7 +1,8 @@
 
 # ================================================================================
 The number of group : 4
-The number of split you set : 2
+The number of split you set : 2 (2 folds)
+group_kfold=GroupKFold(n_splits=2)
 
 train (6,)
 test (6,)
@@ -33,7 +34,8 @@ test groups [0 0 0 3 3 3]
 
 # ================================================================================
 The number of group : 4
-The number of split you set : 3
+The number of split you set : 3 (3 folds)
+group_kfold=GroupKFold(n_splits=3)
 
 train (8,)
 test (4,)
@@ -85,7 +87,8 @@ test groups [0 0 0]
 
 # ================================================================================
 The number of group : 4
-The number of split you set : 4
+The number of split you set : 4 (4 folds)
+group_kfold=GroupKFold(n_splits=4)
 Under this configuration (the number of group = the number of split), GroupKFold is equal to LeaveOneGroupOut
 LeaveOneGroupOut seems meaning Leave "one group" out for validation data
 
