@@ -79,6 +79,8 @@ from torch.nn import init
 from sklearn import preprocessing
 from sklearn.utils import resample
 import gc
+import traceback
+from collections import Counter,OrderedDict
 from imblearn.over_sampling import SMOTE
 from sklearn.utils import shuffle
 from hyperopt import hp,tpe,fmin
@@ -86,6 +88,7 @@ import lightgbm as lgb
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split,cross_val_score,GroupKFold
 import pickle
+import copy
 from datetime import datetime,timedelta,date
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
@@ -127,10 +130,11 @@ USE_TRAIN=True ; TRAIN_DATA_SIZE="full" ; USE_TEST=False ; TEST_DATA_SIZE="small
 # # TEST_DATA_SIZE="full"
 # TEST_DATA_SIZE="small"
 
-# USE_VALIDATION=True
-USE_VALIDATION=False
+USE_VALIDATION=True
+# USE_VALIDATION=False
 
 # --------------------------------------------------------------------------------
+NAN_CRITERION=50
 # CREATE_IMAGE_ON_NAN_RATIO=True
 CREATE_IMAGE_ON_NAN_RATIO=False
 
@@ -293,76 +297,187 @@ class IEEEVal_Dataset(data.Dataset):
     return self.test_X[idx],self.test_y[idx]
 
 # ================================================================================
+def investigate_frequency(X_train,train_id):
+  intersection_of_transaction_and_identity=set(list(X_train["TransactionID"])).intersection(set(list(train_id["TransactionID"])))
+  # print('intersection_of_transaction_and_identity',intersection_of_transaction_and_identity)
+  # print('intersection_of_transaction_and_identity',len(intersection_of_transaction_and_identity))
+
+  transaction_minus_identity=set(list(X_train["TransactionID"]))-set(list(train_id["TransactionID"]))
+  # print('transaction_minus_identity',transaction_minus_identity)
+  # print('transaction_minus_identity',len(transaction_minus_identity))
+
+  identity_minus_transaction=set(list(train_id["TransactionID"]))-set(list(X_train["TransactionID"]))
+  # print('identity_minus_transaction',identity_minus_transaction)
+  # print('identity_minus_transaction',len(identity_minus_transaction))
+  # intersection_of_transaction_and_identity 144233
+  # transaction_minus_identity 446307
+  # identity_minus_transaction set()
+  # identity_minus_transaction 0
+
+  return len(intersection_of_transaction_and_identity),len(transaction_minus_identity),len(identity_minus_transaction)
+
+def frequency_visualization(
+  frequency_distribution_of_transaction_TransactionID,
+  frequency_distribution_of_idendity_TransactionID,
+  number_of_transaction_rows,
+  number_of_identity_rows,
+  intersection_of_transaction_and_identity,
+  transaction_minus_identity,
+  identity_minus_transaction):
+
+  def my_fmt(x):
+    return '{:.4f}%'.format(x)
+
+  ax1=plt.subplot2grid((2,2),(0,0),colspan=1)
+  ax2=plt.subplot2grid((2,2),(0,1),colspan=1)
+  ax3=plt.subplot2grid((2,2),(1,0),colspan=2)
+  ax1.pie(frequency_distribution_of_transaction_TransactionID.values(), labels=frequency_distribution_of_transaction_TransactionID.keys(),autopct=my_fmt)
+  ax1.set_title('TransactionID distribution from transaction')
+  ax2.pie(frequency_distribution_of_idendity_TransactionID.values(), labels=frequency_distribution_of_idendity_TransactionID.keys(),autopct=my_fmt)
+  ax2.set_title('TransactionID distribution from identity')
+  ax3.bar(["transaction","idendity","Transaction\capidentity","Transaction-Identity","Identity-Transaction"],[number_of_transaction_rows,number_of_identity_rows,intersection_of_transaction_and_identity,transaction_minus_identity,identity_minus_transaction])
+  # for i, v in enumerate([number_of_transaction_rows,number_of_identity_rows,intersection_of_transaction_and_identity,transaction_minus_identity,identity_minus_transaction]):
+  #   ax3.text(v + 3, i + .25, str(v), color='black', fontweight='bold')
+  for index,data in enumerate([number_of_transaction_rows,number_of_identity_rows,intersection_of_transaction_and_identity,transaction_minus_identity,identity_minus_transaction]):
+    plt.text(x=index,y=data+1,s=f"{data}",fontdict=dict(fontsize=15))
+  # plt.close()
+  # plt.show()
+
+def visualize_nan_ratio_change_in_identity(
+  train_id_shape,number_of_nan_in_column,ratio_of_nan_in_column,
+  only_identity_shape,number_of_nan_in_column_after_merge,ratio_of_nan_in_column_after_merge,
+  ratio_difference_of_nan_in_column_after_merge):
+  # x : columns
+  # y : number of NaNs
+  # right y : NaN percent
+  # line : NaN percent
+  # group original/NaN 
+
+  fig,ax=plt.subplots(2,1,figsize=(15,5))
+
+  # --------------------------------------------------------------------------------
+  labels=list(number_of_nan_in_column.index)
+  # print('labels',labels)
+  # ['TransactionID', 'id_01', 'id_02', 'id_03', 'id_04', 'id_05', 'id_06', 'id_07', 'id_08', 'id_09', 'id_10', 'id_11', 'id_12', 'id_13', 'id_14', 'id_15', 'id_16', 'id_17', 'id_18', 'id_19', 'id_20', 'id_21', 'id_22', 'id_23', 'id_24', 'id_25', 'id_26', 'id_27', 'id_28', 'id_29', 'id_30', 'id_31', 'id_32', 'id_33', 'id_34', 'id_35', 'id_36', 'id_37', 'id_38', 'DeviceType', 'DeviceInfo']
+  data_number_of_row_in_column=[train_id_shape]*len(list(number_of_nan_in_column.values))
+  data_number_of_nan_in_column=list(number_of_nan_in_column.values)
+  data_ratio_of_nan_in_column=list(ratio_of_nan_in_column.values)
+
+  width = 0.35
+  x=np.arange(len(labels))
+  
+  rects1=ax[0].bar(x - width/2,data_number_of_row_in_column,width,label='Original identity rows')
+  rects2=ax[0].bar(x + width/2,data_number_of_nan_in_column,width,label='Nan rows of original identity')
+
+  ax0_right=ax[0].twinx()
+  ax0_right.plot(x,list(ratio_of_nan_in_column.values))
+
+  ax[0].set_ylabel('Number of rows')
+  ax[0].set_title('Nan : Original identity')
+  ax[0].set_xticks(x)
+  ax[0].set_xticklabels(labels,rotation=90)
+  ax[0].legend()
+
+  # --------------------------------------------------------------------------------
+  data_number_of_row_in_column_after_merge=[only_identity_shape]*len(list(number_of_nan_in_column.values))
+  data_number_of_nan_in_column_after_merge=list(number_of_nan_in_column_after_merge.values)
+  data_ratio_of_nan_in_column_after_merge=list(ratio_of_nan_in_column_after_merge.values)
+  
+  rects3=ax[1].bar(x-width/2,data_number_of_row_in_column_after_merge,width,label='Merged identity rows')
+  rects4=ax[1].bar(x+width/2,data_number_of_nan_in_column_after_merge,width,label='Nan rows of Merged identity')
+
+  ax1_right=ax[1].twinx()
+  ax1_right.plot(x,list(ratio_of_nan_in_column_after_merge.values))
+
+  ax[1].set_ylabel('Number of rows')
+  ax[1].set_title('Nan : Merged identity')
+  ax[1].set_xticks(x)
+  ax[1].set_xticklabels(labels,rotation=90)
+  ax[1].legend()
+
+  fig.tight_layout()
+
+  plt.show()
+
+def nan_ratio_change_in_identity(train_id,X_train):
+  number_of_nan_in_column=train_id.isnull().sum(axis=0)
+  # print('number_of_nan_in_column',number_of_nan_in_column)
+  # TransactionID         0
+  # id_01                 0
+  # id_02              3361
+  # id_03             77909
+
+  ratio_of_nan_in_column=number_of_nan_in_column/train_id.shape[0]*100
+  # print('ratio_of_nan_in_column',ratio_of_nan_in_column)
+
+  # ================================================================================
+  X_train_only_identity=X_train[list(train_id.columns)]
+  number_of_nan_in_column_after_merge=X_train_only_identity.isnull().sum(axis=0)
+  # print('number_of_nan_in_column_after_merge',number_of_nan_in_column_after_merge)
+  # number_of_nan_in_column_after_merge
+  # TransactionID        0
+  # id_01            15081
+  # id_02            15194
+  # id_03            17778
+  # id_04            17778
+
+  ratio_of_nan_in_column_after_merge=number_of_nan_in_column_after_merge/X_train_only_identity.shape[0]*100
+  # print('ratio_of_nan_in_column_after_merge',ratio_of_nan_in_column_after_merge)
+  # ratio_of_nan_in_column_after_merge
+  # TransactionID     0.00
+  # id_01             0.00
+  # id_02            16.80
+  # id_03           389.53
+
+  # ================================================================================
+  ratio_difference_of_nan_in_column_after_merge=ratio_of_nan_in_column_after_merge-ratio_of_nan_in_column
+
+  # ================================================================================
+  visualize_nan_ratio_change_in_identity(
+    train_id.shape[0],number_of_nan_in_column,ratio_of_nan_in_column,
+    X_train_only_identity.shape[0],number_of_nan_in_column_after_merge,ratio_of_nan_in_column_after_merge,
+    ratio_difference_of_nan_in_column_after_merge)
+  
+
 def load_csv_files_train():
   
   # ================================================================================
-  # COLUMNS WITH STRINGS
-
-  str_type = ['ProductCD', 'card1',  'card2', 'card3', 'card4', 'card5', 'card6',
-              'addr1', 'addr2',
-              'P_emaildomain', 'R_emaildomain','M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8', 'M9',
-              'id_12', 'id_14', 'id_15', 'id_16', 'id_21', 'id_22', 'id_23', 'id_24', 'id_25', 'id_26', 'id_27', 'id_28', 'id_29', 'id_30', 'id_31', 'id_32', 'id_33', 'id_34', 'id_35', 'id_36', 'id_37', 'id_38', 
-              'DeviceType', 'DeviceInfo']
-
-  # str_type += ['id-12', 'id-15', 'id-16', 'id-23', 'id-27', 'id-28', 'id-29', 'id-30', 
-  #             'id-31', 'id-33', 'id-34', 'id-35', 'id-36', 'id-37', 'id-38']
+  train_transaction_all_columns=['TransactionID', 'isFraud', 'TransactionDT', 'TransactionAmt', 'ProductCD', 'card1', 'card2', 'card3', 'card4', 'card5', 'card6', 'addr1', 'addr2', 'dist1', 'dist2', 'P_emaildomain', 'R_emaildomain', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10', 'C11', 'C12', 'C13', 'C14', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'D10', 'D11', 'D12', 'D13', 'D14', 'D15', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8', 'M9', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8', 'V9', 'V10', 'V11', 'V12', 'V13', 'V14', 'V15', 'V16', 'V17', 'V18', 'V19', 'V20', 'V21', 'V22', 'V23', 'V24', 'V25', 'V26', 'V27', 'V28', 'V29', 'V30', 'V31', 'V32', 'V33', 'V34', 'V35', 'V36', 'V37', 'V38', 'V39', 'V40', 'V41', 'V42', 'V43', 'V44', 'V45', 'V46', 'V47', 'V48', 'V49', 'V50', 'V51', 'V52', 'V53', 'V54', 'V55', 'V56', 'V57', 'V58', 'V59', 'V60', 'V61', 'V62', 'V63', 'V64', 'V65', 'V66', 'V67', 'V68', 'V69', 'V70', 'V71', 'V72', 'V73', 'V74', 'V75', 'V76', 'V77', 'V78', 'V79', 'V80', 'V81', 'V82', 'V83', 'V84', 'V85', 'V86', 'V87', 'V88', 'V89', 'V90', 'V91', 'V92', 'V93', 'V94', 'V95', 'V96', 'V97', 'V98', 'V99', 'V100', 'V101', 'V102', 'V103', 'V104', 'V105', 'V106', 'V107', 'V108', 'V109', 'V110', 'V111', 'V112', 'V113', 'V114', 'V115', 'V116', 'V117', 'V118', 'V119', 'V120', 'V121', 'V122', 'V123', 'V124', 'V125', 'V126', 'V127', 'V128', 'V129', 'V130', 'V131', 'V132', 'V133', 'V134', 'V135', 'V136', 'V137', 'V138', 'V139', 'V140', 'V141', 'V142', 'V143', 'V144', 'V145', 'V146', 'V147', 'V148', 'V149', 'V150', 'V151', 'V152', 'V153', 'V154', 'V155', 'V156', 'V157', 'V158', 'V159', 'V160', 'V161', 'V162', 'V163', 'V164', 'V165', 'V166', 'V167', 'V168', 'V169', 'V170', 'V171', 'V172', 'V173', 'V174', 'V175', 'V176', 'V177', 'V178', 'V179', 'V180', 'V181', 'V182', 'V183', 'V184', 'V185', 'V186', 'V187', 'V188', 'V189', 'V190', 'V191', 'V192', 'V193', 'V194', 'V195', 'V196', 'V197', 'V198', 'V199', 'V200', 'V201', 'V202', 'V203', 'V204', 'V205', 'V206', 'V207', 'V208', 'V209', 'V210', 'V211', 'V212', 'V213', 'V214', 'V215', 'V216', 'V217', 'V218', 'V219', 'V220', 'V221', 'V222', 'V223', 'V224', 'V225', 'V226', 'V227', 'V228', 'V229', 'V230', 'V231', 'V232', 'V233', 'V234', 'V235', 'V236', 'V237', 'V238', 'V239', 'V240', 'V241', 'V242', 'V243', 'V244', 'V245', 'V246', 'V247', 'V248', 'V249', 'V250', 'V251', 'V252', 'V253', 'V254', 'V255', 'V256', 'V257', 'V258', 'V259', 'V260', 'V261', 'V262', 'V263', 'V264', 'V265', 'V266', 'V267', 'V268', 'V269', 'V270', 'V271', 'V272', 'V273', 'V274', 'V275', 'V276', 'V277', 'V278', 'V279', 'V280', 'V281', 'V282', 'V283', 'V284', 'V285', 'V286', 'V287', 'V288', 'V289', 'V290', 'V291', 'V292', 'V293', 'V294', 'V295', 'V296', 'V297', 'V298', 'V299', 'V300', 'V301', 'V302', 'V303', 'V304', 'V305', 'V306', 'V307', 'V308', 'V309', 'V310', 'V311', 'V312', 'V313', 'V314', 'V315', 'V316', 'V317', 'V318', 'V319', 'V320', 'V321', 'V322', 'V323', 'V324', 'V325', 'V326', 'V327', 'V328', 'V329', 'V330', 'V331', 'V332', 'V333', 'V334', 'V335', 'V336', 'V337', 'V338', 'V339']
+  train_identity_all_columns=['TransactionID', 'id_01', 'id_02', 'id_03', 'id_04', 'id_05', 'id_06', 'id_07', 'id_08', 'id_09', 'id_10', 'id_11', 'id_12', 'id_13', 'id_14', 'id_15', 'id_16', 'id_17', 'id_18', 'id_19', 'id_20', 'id_21', 'id_22', 'id_23', 'id_24', 'id_25', 'id_26', 'id_27', 'id_28', 'id_29', 'id_30', 'id_31', 'id_32', 'id_33', 'id_34', 'id_35', 'id_36', 'id_37', 'id_38', 'DeviceType', 'DeviceInfo']
 
   # ================================================================================
-  # FIRST 53 COLUMNS
+  # Categorical columns in transaction
 
-  id_numeric=["id_"+str(i).zfill(2) for i in range(1,12)]
+  categorical_columns_in_train_transaction=[]
+  categorical_columns_in_train_transaction.append("ProductCD")
+  categorical_columns_in_train_transaction.extend(['card{}'.format(i) for i in range(1,7)])
+  categorical_columns_in_train_transaction.extend(['addr1','addr2'])
+  categorical_columns_in_train_transaction.extend(['P_emaildomain','R_emaildomain'])
+  categorical_columns_in_train_transaction.extend(['M{}'.format(i) for i in range(1,10)])
 
-  cols = ['TransactionID', 'TransactionDT', 'TransactionAmt', 'dist1', 'dist2', 
-        'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10', 'C11',
-        'C12', 'C13', 'C14', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8',
-        'D9', 'D10', 'D11', 'D12', 'D13', 'D14', 'D15', 'isFraud']+id_numeric
-
-  # ================================================================================
-  # V COLUMNS TO LOAD DECIDED BY CORRELATION EDA
-  # https://www.kaggle.com/cdeotte/eda-for-columns-v-and-id
-
-  v =  [1, 3, 4, 6, 8, 11]
-  v += [13, 14, 17, 20, 23, 26, 27, 30]
-  v += [36, 37, 40, 41, 44, 47, 48]
-  v += [54, 56, 59, 62, 65, 67, 68, 70]
-  v += [76, 78, 80, 82, 86, 88, 89, 91]
-
-  #v += [96, 98, 99, 104] #relates to groups, no NAN 
-  v += [107, 108, 111, 115, 117, 120, 121, 123] # maybe group, no NAN
-  v += [124, 127, 129, 130, 136] # relates to groups, no NAN
-
-  # LOTS OF NAN BELOW
-  v += [138, 139, 142, 147, 156, 162] #b1
-  v += [165, 160, 166] #b1
-  v += [178, 176, 173, 182] #b2
-  v += [187, 203, 205, 207, 215] #b2
-  v += [169, 171, 175, 180, 185, 188, 198, 210, 209] #b2
-  v += [218, 223, 224, 226, 228, 229, 235] #b3
-  v += [240, 258, 257, 253, 252, 260, 261] #b3
-  v += [264, 266, 267, 274, 277] #b3
-  v += [220, 221, 234, 238, 250, 271] #b3
-
-  v += [294, 284, 285, 286, 291, 297] # relates to grous, no NAN
-  v += [303, 305, 307, 309, 310, 320] # relates to groups, no NAN
-  v += [281, 283, 289, 296, 301, 314] # relates to groups, no NAN
-  #v += [332, 325, 335, 338] # b4 lots NAN
-
-  # print('v',v)
-  # v [1, 3, 4, 6, 8, 11, 13, 14, 17, 20, 23, 26, 27, 30, 36, 37, 40, 41, 44, 47, 48, 54, 56, 59, 62, 65, 67, 68, 70, 76, 78, 80, 82, 86, 88, 89, 91, 107, 108, 111, 115, 117, 120, 121, 123, 124, 127, 129, 130, 136, 138, 139, 142, 147, 156, 162, 165, 160, 166, 178, 176, 173, 182, 187, 203, 205, 207, 215, 169, 171, 175, 180, 185, 188, 198, 210, 209, 218, 223, 224, 226, 228, 229, 235, 240, 258, 257, 253, 252, 260, 261, 264, 266, 267, 274, 277, 220, 221, 234, 238, 250, 271, 294, 284, 285, 286, 291, 297, 303, 305, 307, 309, 310, 320, 281, 283, 289, 296, 301, 314]
+  numerical_columns_in_train_transaction=[one_column for one_column in train_transaction_all_columns if one_column not in categorical_columns_in_train_transaction]
+  # print('numerical_columns_in_train_transaction',numerical_columns_in_train_transaction)
+  # ['TransactionID', 'isFraud', 'TransactionDT', 'TransactionAmt', 'dist1', 'dist2', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10', 'C11', 'C12', 'C13', 
 
   # ================================================================================
-  cols += ['V'+str(x) for x in v]
+  # Categorical columns in identity
 
+  categorical_columns_in_train_identity=[]
+  categorical_columns_in_train_identity.extend(['DeviceType','DeviceInfo'])
+  categorical_columns_in_train_identity.extend(['id_{}'.format(i) for i in range(12,39)])
+
+  numerical_columns_in_train_identity=[one_column for one_column in train_identity_all_columns if one_column not in categorical_columns_in_train_identity]
+  # print('numerical_columns_in_train_identity',numerical_columns_in_train_identity)
+  # ['TransactionID', 'id_01', 'id_02', 'id_03', 'id_04',
+
+  # ================================================================================
   dtypes = {}
-  for c in cols:
-      dtypes[c] = 'float32'
 
-  for c in str_type:
-      dtypes[c] = 'category'
-
+  for c in numerical_columns_in_train_transaction+numerical_columns_in_train_identity:
+    dtypes[c]='float32'
+  for c in categorical_columns_in_train_transaction+categorical_columns_in_train_identity:
+    dtypes[c]='category'
   # print('dtypes',dtypes)
-
-  use_cols=cols+str_type
 
   # ================================================================================
   # Load train data
@@ -370,16 +485,39 @@ def load_csv_files_train():
   # print('dtypes',dtypes)
 
   if TRAIN_DATA_SIZE=="full":
-    # X_train = pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/train_transaction_original.csv', dtype=dtypes, usecols=use_cols+['isFraud'])
-    X_train = pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/train_transaction_original.csv', dtype=dtypes)
+    # X_train=pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/train_transaction_original.csv',dtype=dtypes,usecols=use_cols+['isFraud'])
+    X_train=pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/train_transaction_original.csv', dtype=dtypes)
 
   elif TRAIN_DATA_SIZE=="small":
 
-    # X_train = pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/train_transaction_small.csv', dtype=dtypes, usecols=use_cols+['isFraud'])
-    X_train = pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/train_transaction_small.csv', dtype=dtypes)
+    # X_train=pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/train_transaction_small.csv',dtype=dtypes,usecols=use_cols+['isFraud'])
+    X_train=pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/train_transaction_small.csv',dtype=dtypes)
 
-  train_id = pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/train_identity.csv', dtype=dtypes)
+  train_id=pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/train_identity.csv',dtype=dtypes)
 
+  # ================================================================================
+  # print(Counter(list(Counter(list(X_train["TransactionID"])).values())))
+  # Counter({1: 20001})
+
+  # print(Counter(list(Counter(list(train_id["TransactionID"])).values())))
+  # Counter({1: 144233})
+
+  # ================================================================================
+  # intersection_of_transaction_and_identity,transaction_minus_identity,identity_minus_transaction=investigate_frequency(X_train,train_id)
+
+  # frequency_visualization(
+  #   Counter(list(Counter(list(X_train["TransactionID"])).values())),
+  #   Counter(list(Counter(list(train_id["TransactionID"])).values())),
+  #   X_train.shape[0],
+  #   train_id.shape[0],
+  #   intersection_of_transaction_and_identity,
+  #   transaction_minus_identity,
+  #   identity_minus_transaction)
+
+  # pie : frequecy of TransactionID in transaction data   |   pie : frequecy of TransactionID in transaction data
+  # vertical bar : number of transaction row, number of identity row, intersection row, transaction-identity row, identity-transaction row
+
+  # ================================================================================
   # X_train = X_train.merge(train_id, how='left', left_index=True, right_index=True)
   X_train=pd.merge(X_train,train_id,on=['TransactionID'],how='left')
 
@@ -387,89 +525,49 @@ def load_csv_files_train():
   # print('X_train',X_train)
 
   # ================================================================================
-  # Select columns
-
-  X_train=X_train[use_cols]
-  # print('X_train',X_train)
-
-  # ================================================================================
-  # Remove columns
-
-  for c in ['D6','D7','D8','D9','D12','D13','D14','C3','M5','id_08','id_33','card4','id_07','id_14','id_21','id_30','id_32','id_34']+['id_'+str(x) for x in range(22,28)]:
-    del X_train[c]
+  # nan_ratio_change_in_identity(train_id,X_train)
 
   return X_train
 
 def load_csv_files_test():
-  
-  # ================================================================================
-  # COLUMNS WITH STRINGS
-
-  str_type = ['ProductCD', 'card1',  'card2', 'card3', 'card4', 'card5', 'card6',
-              'addr1', 'addr2',
-              'P_emaildomain', 'R_emaildomain','M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8', 'M9',
-              'id-12', 'id-14', 'id-15', 'id-16', 'id-21', 'id-22', 'id-23', 'id-24', 'id-25', 'id-26', 'id-27', 'id-28', 'id-29', 'id-30', 'id-31', 'id-32', 'id-33', 'id-34', 'id-35', 'id-36', 'id-37', 'id-38', 
-              'DeviceType', 'DeviceInfo']
-
-  # str_type += ['id-12', 'id-15', 'id-16', 'id-23', 'id-27', 'id-28', 'id-29', 'id-30', 
-  #             'id-31', 'id-33', 'id-34', 'id-35', 'id-36', 'id-37', 'id-38']
 
   # ================================================================================
-  # FIRST 53 COLUMNS
-
-  id_numeric=["id-"+str(i).zfill(2) for i in range(1,12)]
-
-  cols = ['TransactionID', 'TransactionDT', 'TransactionAmt', 'dist1', 'dist2', 
-        'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10', 'C11',
-        'C12', 'C13', 'C14', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8',
-        'D9', 'D10', 'D11', 'D12', 'D13', 'D14', 'D15']+id_numeric
+  test_transaction_all_columns=['TransactionID', 'TransactionDT', 'TransactionAmt', 'ProductCD', 'card1', 'card2', 'card3', 'card4', 'card5', 'card6', 'addr1', 'addr2', 'dist1', 'dist2', 'P_emaildomain', 'R_emaildomain', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10', 'C11', 'C12', 'C13', 'C14', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'D10', 'D11', 'D12', 'D13', 'D14', 'D15', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8', 'M9', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8', 'V9', 'V10', 'V11', 'V12', 'V13', 'V14', 'V15', 'V16', 'V17', 'V18', 'V19', 'V20', 'V21', 'V22', 'V23', 'V24', 'V25', 'V26', 'V27', 'V28', 'V29', 'V30', 'V31', 'V32', 'V33', 'V34', 'V35', 'V36', 'V37', 'V38', 'V39', 'V40', 'V41', 'V42', 'V43', 'V44', 'V45', 'V46', 'V47', 'V48', 'V49', 'V50', 'V51', 'V52', 'V53', 'V54', 'V55', 'V56', 'V57', 'V58', 'V59', 'V60', 'V61', 'V62', 'V63', 'V64', 'V65', 'V66', 'V67', 'V68', 'V69', 'V70', 'V71', 'V72', 'V73', 'V74', 'V75', 'V76', 'V77', 'V78', 'V79', 'V80', 'V81', 'V82', 'V83', 'V84', 'V85', 'V86', 'V87', 'V88', 'V89', 'V90', 'V91', 'V92', 'V93', 'V94', 'V95', 'V96', 'V97', 'V98', 'V99', 'V100', 'V101', 'V102', 'V103', 'V104', 'V105', 'V106', 'V107', 'V108', 'V109', 'V110', 'V111', 'V112', 'V113', 'V114', 'V115', 'V116', 'V117', 'V118', 'V119', 'V120', 'V121', 'V122', 'V123', 'V124', 'V125', 'V126', 'V127', 'V128', 'V129', 'V130', 'V131', 'V132', 'V133', 'V134', 'V135', 'V136', 'V137', 'V138', 'V139', 'V140', 'V141', 'V142', 'V143', 'V144', 'V145', 'V146', 'V147', 'V148', 'V149', 'V150', 'V151', 'V152', 'V153', 'V154', 'V155', 'V156', 'V157', 'V158', 'V159', 'V160', 'V161', 'V162', 'V163', 'V164', 'V165', 'V166', 'V167', 'V168', 'V169', 'V170', 'V171', 'V172', 'V173', 'V174', 'V175', 'V176', 'V177', 'V178', 'V179', 'V180', 'V181', 'V182', 'V183', 'V184', 'V185', 'V186', 'V187', 'V188', 'V189', 'V190', 'V191', 'V192', 'V193', 'V194', 'V195', 'V196', 'V197', 'V198', 'V199', 'V200', 'V201', 'V202', 'V203', 'V204', 'V205', 'V206', 'V207', 'V208', 'V209', 'V210', 'V211', 'V212', 'V213', 'V214', 'V215', 'V216', 'V217', 'V218', 'V219', 'V220', 'V221', 'V222', 'V223', 'V224', 'V225', 'V226', 'V227', 'V228', 'V229', 'V230', 'V231', 'V232', 'V233', 'V234', 'V235', 'V236', 'V237', 'V238', 'V239', 'V240', 'V241', 'V242', 'V243', 'V244', 'V245', 'V246', 'V247', 'V248', 'V249', 'V250', 'V251', 'V252', 'V253', 'V254', 'V255', 'V256', 'V257', 'V258', 'V259', 'V260', 'V261', 'V262', 'V263', 'V264', 'V265', 'V266', 'V267', 'V268', 'V269', 'V270', 'V271', 'V272', 'V273', 'V274', 'V275', 'V276', 'V277', 'V278', 'V279', 'V280', 'V281', 'V282', 'V283', 'V284', 'V285', 'V286', 'V287', 'V288', 'V289', 'V290', 'V291', 'V292', 'V293', 'V294', 'V295', 'V296', 'V297', 'V298', 'V299', 'V300', 'V301', 'V302', 'V303', 'V304', 'V305', 'V306', 'V307', 'V308', 'V309', 'V310', 'V311', 'V312', 'V313', 'V314', 'V315', 'V316', 'V317', 'V318', 'V319', 'V320', 'V321', 'V322', 'V323', 'V324', 'V325', 'V326', 'V327', 'V328', 'V329', 'V330', 'V331', 'V332', 'V333', 'V334', 'V335', 'V336', 'V337', 'V338', 'V339']
+  test_identity_all_columns=['TransactionID', 'id-01', 'id-02', 'id-03', 'id-04', 'id-05', 'id-06', 'id-07', 'id-08', 'id-09', 'id-10', 'id-11', 'id-12', 'id-13', 'id-14', 'id-15', 'id-16', 'id-17', 'id-18', 'id-19', 'id-20', 'id-21', 'id-22', 'id-23', 'id-24', 'id-25', 'id-26', 'id-27', 'id-28', 'id-29', 'id-30', 'id-31', 'id-32', 'id-33', 'id-34', 'id-35', 'id-36', 'id-37', 'id-38', 'DeviceType', 'DeviceInfo']
 
   # ================================================================================
-  # V COLUMNS TO LOAD DECIDED BY CORRELATION EDA
-  # https://www.kaggle.com/cdeotte/eda-for-columns-v-and-id
+  # Categorical columns in transaction
 
-  v =  [1, 3, 4, 6, 8, 11]
-  v += [13, 14, 17, 20, 23, 26, 27, 30]
-  v += [36, 37, 40, 41, 44, 47, 48]
-  v += [54, 56, 59, 62, 65, 67, 68, 70]
-  v += [76, 78, 80, 82, 86, 88, 89, 91]
+  categorical_columns_in_test_transaction=[]
+  categorical_columns_in_test_transaction.append("ProductCD")
+  categorical_columns_in_test_transaction.extend(['card{}'.format(i) for i in range(1,7)])
+  categorical_columns_in_test_transaction.extend(['addr1','addr2'])
+  categorical_columns_in_test_transaction.extend(['P_emaildomain','R_emaildomain'])
+  categorical_columns_in_test_transaction.extend(['M{}'.format(i) for i in range(1,10)])
 
-  #v += [96, 98, 99, 104] #relates to groups, no NAN 
-  v += [107, 108, 111, 115, 117, 120, 121, 123] # maybe group, no NAN
-  v += [124, 127, 129, 130, 136] # relates to groups, no NAN
-
-  # LOTS OF NAN BELOW
-  v += [138, 139, 142, 147, 156, 162] #b1
-  v += [165, 160, 166] #b1
-  v += [178, 176, 173, 182] #b2
-  v += [187, 203, 205, 207, 215] #b2
-  v += [169, 171, 175, 180, 185, 188, 198, 210, 209] #b2
-  v += [218, 223, 224, 226, 228, 229, 235] #b3
-  v += [240, 258, 257, 253, 252, 260, 261] #b3
-  v += [264, 266, 267, 274, 277] #b3
-  v += [220, 221, 234, 238, 250, 271] #b3
-
-  v += [294, 284, 285, 286, 291, 297] # relates to grous, no NAN
-  v += [303, 305, 307, 309, 310, 320] # relates to groups, no NAN
-  v += [281, 283, 289, 296, 301, 314] # relates to groups, no NAN
-  #v += [332, 325, 335, 338] # b4 lots NAN
-
-  # print('v',v)
-  # v [1, 3, 4, 6, 8, 11, 13, 14, 17, 20, 23, 26, 27, 30, 36, 37, 40, 41, 44, 47, 48, 54, 56, 59, 62, 65, 67, 68, 70, 76, 78, 80, 82, 86, 88, 89, 91, 107, 108, 111, 115, 117, 120, 121, 123, 124, 127, 129, 130, 136, 138, 139, 142, 147, 156, 162, 165, 160, 166, 178, 176, 173, 182, 187, 203, 205, 207, 215, 169, 171, 175, 180, 185, 188, 198, 210, 209, 218, 223, 224, 226, 228, 229, 235, 240, 258, 257, 253, 252, 260, 261, 264, 266, 267, 274, 277, 220, 221, 234, 238, 250, 271, 294, 284, 285, 286, 291, 297, 303, 305, 307, 309, 310, 320, 281, 283, 289, 296, 301, 314]
+  numerical_columns_in_test_transaction=[one_column for one_column in test_transaction_all_columns if one_column not in categorical_columns_in_test_transaction]
+  # print('numerical_columns_in_test_transaction',numerical_columns_in_test_transaction)
+  # ['TransactionID', 'isFraud', 'TransactionDT', 'TransactionAmt', 'dist1', 'dist2', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10', 'C11', 'C12', 'C13', 
 
   # ================================================================================
-  cols += ['V'+str(x) for x in v]
+  # Categorical columns in identity
 
+  categorical_columns_in_test_identity=[]
+  categorical_columns_in_test_identity.extend(['DeviceType','DeviceInfo'])
+  categorical_columns_in_test_identity.extend(['id-{}'.format(i) for i in range(12,39)])
+
+  numerical_columns_in_test_identity=[one_column for one_column in test_identity_all_columns if one_column not in categorical_columns_in_test_identity]
+  # print('numerical_columns_in_test_identity',numerical_columns_in_test_identity)
+  # ['TransactionID', 'id_01', 'id_02', 'id_03', 'id_04',
+
+  # ================================================================================
   dtypes = {}
-  for c in cols:
-      dtypes[c] = 'float32'
 
-  for c in str_type:
-      dtypes[c] = 'category'
-
+  for c in numerical_columns_in_test_transaction+numerical_columns_in_test_identity:
+    dtypes[c]='float32'
+  for c in categorical_columns_in_test_transaction+categorical_columns_in_test_identity:
+    dtypes[c]='category'
   # print('dtypes',dtypes)
-
-  use_cols=cols+str_type
 
   # ================================================================================
   # Load train data
@@ -477,37 +575,26 @@ def load_csv_files_test():
   # print('dtypes',dtypes)
 
   if TEST_DATA_SIZE=="full":
-    # X_train = pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/train_transaction_original.csv', dtype=dtypes, usecols=use_cols+['isFraud'])
-    X_train = pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/test_transaction_original.csv', dtype=dtypes,)
+    # X_train=pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/train_transaction_original.csv',dtype=dtypes,usecols=use_cols+['isFraud'])
+    X_train=pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/test_transaction_original.csv',dtype=dtypes,)
 
   elif TEST_DATA_SIZE=="small":
 
-    # X_train = pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/train_transaction_small.csv', dtype=dtypes, usecols=use_cols+['isFraud'])
-    X_train = pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/test_transaction.csv', dtype=dtypes)
+    # X_train=pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/train_transaction_small.csv',dtype=dtypes,usecols=use_cols+['isFraud'])
+    X_train=pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/test_transaction.csv',dtype=dtypes)
 
-  train_id = pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/test_identity.csv', dtype=dtypes)
+  train_id=pd.read_csv('/mnt/1T-5e7/Data_collection/Kaggle_00001_ieee-fraud-detection/test_identity.csv',dtype=dtypes)
 
-  # X_train = X_train.merge(train_id, how='left', left_index=True, right_index=True)
+  # ================================================================================
+  # X_train=X_train.merge(train_id,how='left',left_index=True,right_index=True)
   X_train=pd.merge(X_train,train_id,on=['TransactionID'],how='left')
 
   X_train=X_train.sort_values(by=['TransactionID'],axis=0)
   # print('X_train',X_train)
 
-  # ================================================================================
-  # Select columns
-
-  X_train=X_train[use_cols]
-  # print('X_train',X_train)
-
-  # ================================================================================
-  # Remove columns
-
-  for c in ['D6','D7','D8','D9','D12','D13','D14','C3','M5','id-08','id-33','card4','id-07','id-14','id-21','id-30','id-32','id-34']+['id-'+str(x) for x in range(22,28)]:
-    del X_train[c]
-
   return X_train
 
-def check_nan(merged,create_image):
+def check_nan(merged,NAN_CRITERION,create_image):
   number_of_rows_from_data=merged.shape[0]
   number_of_columns_from_data=merged.shape[1]
 
@@ -544,64 +631,38 @@ def check_nan(merged,create_image):
 
   # [434 rows x 2 columns]
 
+  # ================================================================================
   df=df.rename(columns={"index":'column_name',0:'nan_percent'})
 
+  fn='./results_csv/nan_percent.csv'
+  df.to_csv(fn,sep=',',encoding='utf-8',index=False)
+
+  # ================================================================================
+  columns_to_be_dropped=list((df[df['nan_percent']>NAN_CRITERION])['column_name'])
+  # print('columns_to_be_dropped',columns_to_be_dropped)
+  # ['dist1', 'dist2', 'R_emaildomain', 'D5', 'D6', 'D7', 'D8', 'D9', 'D12', 'D13', 'D14', 'M5', 'M7', 'M8', 'M9', 'V138', 'V139', 'V140', 'V141', 'V142', 'V143', 'V144', 'V145', 'V146', 'V147', 'V148', 'V149', 'V150', 'V151', 'V152', 'V153', 'V154', 'V155', 'V156', 'V157', 'V158', 'V159', 'V160', 'V161', 'V162', 'V163', 'V164', 'V165', 'V166', 'V167', 'V168', 'V169', 'V170', 'V171', 'V172', 'V173', 'V174', 'V175', 'V176', 'V177', 'V178', 'V179', 'V180', 'V181', 'V182', 'V183', 'V184', 'V185', 'V186', 'V187', 'V188', 'V189', 'V190', 'V191', 'V192', 'V193', 'V194', 'V195', 'V196', 'V197', 'V198', 'V199', 'V200', 'V201', 'V202', 'V203', 'V204', 'V205', 'V206', 'V207', 'V208', 'V209', 'V210', 'V211', 'V212', 'V213', 'V214', 'V215', 'V216', 'V217', 'V218', 'V219', 'V220', 'V221', 'V222', 'V223', 'V224', 'V225', 'V226', 'V227', 'V228', 'V229', 'V230', 'V231', 'V232', 'V233', 'V234', 'V235', 'V236', 'V237', 'V238', 'V239', 'V240', 'V241', 'V242', 'V243', 'V244', 'V245', 'V246', 'V247', 'V248', 'V249', 'V250', 'V251', 'V252', 'V253', 'V254', 'V255', 'V256', 'V257', 'V258', 'V259', 'V260', 'V261', 'V262', 'V263', 'V264', 'V265', 'V266', 'V267', 'V268', 'V269', 'V270', 'V271', 'V272', 'V273', 'V274', 'V275', 'V276', 'V277', 'V278', 'V322', 'V323', 'V324', 'V325', 'V326', 'V327', 'V328', 'V329', 'V330', 'V331', 'V332', 'V333', 'V334', 'V335', 'V336', 'V337', 'V338', 'V339', 'id_01', 'id_02', 'id_03', 'id_04', 'id_05', 'id_06', 'id_07', 'id_08', 'id_09', 'id_10', 'id_11', 'id_12', 'id_13', 'id_14', 'id_15', 'id_16', 'id_17', 'id_18', 'id_19', 'id_20', 'id_21', 'id_22', 'id_23', 'id_24', 'id_25', 'id_26', 'id_27', 'id_28', 'id_29', 'id_30', 'id_31', 'id_32', 'id_33', 'id_34', 'id_35', 'id_36', 'id_37', 'id_38', 'DeviceType', 'DeviceInfo']
+
+  # ================================================================================
   if create_image==True:
     plt.bar(list(df["column_name"]),list(df["nan_percent"]))
     plt.xticks(rotation=90,fontsize=0.3)
     # plt.show()
-    plt.savefig('aa.png',dpi=4000)
+    plt.savefig('NaN_distribution.png',dpi=4000)
     # /mnt/external_disk/Companies/side_project/Kaggle/00001_ieee-fraud-detection/my_code/src/aa.png
   
-  return df
+  return df,columns_to_be_dropped
 
-def discard_40percent_nan_columns(merged,nan_ratio_df):
-  # print('nan_ratio_df',nan_ratio_df)
-  #         column_name  nan_percent
-  # 0     TransactionID     0.000000
-  # 1           isFraud     0.000000
-  # 2     TransactionDT     0.000000
-  # 3    TransactionAmt     0.000000
-  # 4         ProductCD     0.000000
-  # ..              ...          ...
-  # 429           id_36    75.941203
-  # 430           id_37    75.941203
-  # 431           id_38    75.941203
-  # 432      DeviceType    75.971201
-  # 433      DeviceInfo    80.045998
-
-  # [434 rows x 2 columns]
+def discard_nan_columns(merged,columns_to_be_dropped):
+  # print('merged',merged)
+  #        TransactionID  isFraud  TransactionDT  TransactionAmt ProductCD  card1  \
+  # 13285     2987031.00     0.00       86998.00          363.89         W   6573   
+  # 483       2987111.00     0.00       88383.00           18.19         C  13832   
+  # 6239      2987261.00     0.00       90492.00           59.00         W  10049   
 
   # ================================================================================
-  nan_ratio_under40_df=nan_ratio_df[nan_ratio_df['nan_percent']<40]
-  nan_ratio_under40_columns_name=list(nan_ratio_under40_df["column_name"])
-  # print('nan_ratio_under40_columns_name',nan_ratio_under40_columns_name)
-  # nan_ratio_under40_columns_name
-  # ['TransactionID', 'isFraud', 'TransactionDT', 'TransactionAmt', 'ProductCD', 'card1', 'card2', 'card3', 'card4', 'card5', 'card6', 'addr1', 'addr2', 'P_emaildomain', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10', 'C11', 'C12', 'C13', 'C14', 'D1', 'D4', 'D10', 'D15', 'M6', 'V12', 'V13', 'V14', 'V15', 'V16', 'V17', 'V18', 'V19', 'V20', 'V21', 'V22', 'V23', 'V24', 'V25', 'V26', 'V27', 'V28', 'V29', 'V30', 'V31', 'V32', 'V33', 'V34', 'V35', 'V36', 'V37', 'V38', 'V39', 'V40', 'V41', 'V42', 'V43', 'V44', 'V45', 'V46', 'V47', 'V48', 'V49', 'V50', 'V51', 'V52', 'V53', 'V54', 'V55', 'V56', 'V57', 'V58', 'V59', 'V60', 'V61', 'V62', 'V63', 'V64', 'V65', 'V66', 'V67', 'V68', 'V69', 'V70', 'V71', 'V72', 'V73', 'V74', 'V75', 'V76', 'V77', 'V78', 'V79', 'V80', 'V81', 'V82', 'V83', 'V84', 'V85', 'V86', 'V87', 'V88', 'V89', 'V90', 'V91', 'V92', 'V93', 'V94', 'V95', 'V96', 'V97', 'V98', 'V99', 'V100', 'V101', 'V102', 'V103', 'V104', 'V105', 'V106', 'V107', 'V108', 'V109', 'V110', 'V111', 'V112', 'V113', 'V114', 'V115', 'V116', 'V117', 'V118', 'V119', 'V120', 'V121', 'V122', 'V123', 'V124', 'V125', 'V126', 'V127', 'V128', 'V129', 'V130', 'V131', 'V132', 'V133', 'V134', 'V135', 'V136', 'V137', 'V279', 'V280', 'V281', 'V282', 'V283', 'V284', 'V285', 'V286', 'V287', 'V288', 'V289', 'V290', 'V291', 'V292', 'V293', 'V294', 'V295', 'V296', 'V297', 'V298', 'V299', 'V300', 'V301', 'V302', 'V303', 'V304', 'V305', 'V306', 'V307', 'V308', 'V309', 'V310', 'V311', 'V312', 'V313', 'V314', 'V315', 'V316', 'V317', 'V318', 'V319', 'V320', 'V321']
-
-  # ================================================================================
-  # Select columns which have 40% less NaNs
-
-  under40_nan_df=merged[nan_ratio_under40_columns_name]
-  # print('under40_nan_df',under40_nan_df)
-
-  categorical_features=[
-    'ProductCD','card1','card2','card3','card4','card5','card6',
-    'addr1','addr2','P_emaildomain',
-    'M6'
-  ]
-
-  numerical_features=list(filter(lambda x: x not in categorical_features,list(under40_nan_df.columns)))
-  # print('numerical_features',numerical_features)
-
-  with open('./pickles/under40_nan_df_columns_name.pkl','wb') as f:
-    pickle.dump(list(under40_nan_df.columns),f)
-  with open('./pickles/under40_nan_df_numerical_columns_name.pkl','wb') as f:
-    pickle.dump(numerical_features,f)
-  with open('./pickles/under40_nan_df_categorical_columns_name.pkl','wb') as f:
-    pickle.dump(categorical_features,f)
-  
-  return under40_nan_df,categorical_features,numerical_features
+  merged.drop(columns_to_be_dropped,axis=1,inplace=True)
+ 
+  return merged
 
 def separate_full_column_data_into_categorical_and_numerical(csv_train):
 
@@ -859,16 +920,16 @@ def evaluate_by_lgbm(normalized_train_X,train_y,best_parameter_dict=None,model_s
       lgbclf=lgb.LGBMClassifier(**params)
 
     else:
-      # params={
-      #   'num_leaves':512,
-      #   'n_estimators':512,
-      #   'max_depth':9,
-      #   'learning_rate':0.064,
-      #   'subsample':0.85,
-      #   'colsample_bytree':0.85,
-      #   'boosting_type':'gbdt',
-      #   'reg_alpha':0.3
-      # }
+      params={
+        'num_leaves':512,
+        'n_estimators':512,
+        'max_depth':9,
+        'learning_rate':0.064,
+        'subsample':0.85,
+        'colsample_bytree':0.85,
+        'boosting_type':'gbdt',
+        'reg_alpha':0.3
+      }
 
       # params={
       #   "num_leaves":512,
@@ -883,23 +944,23 @@ def evaluate_by_lgbm(normalized_train_X,train_y,best_parameter_dict=None,model_s
       #   "metric":"AUC"
       # }
 
-      params = {
-        'num_leaves': 491,
-        'min_child_weight': 0.03454472573214212,
-        'feature_fraction': 0.3797454081646243,
-        'bagging_fraction': 0.4181193142567742,
-        'min_data_in_leaf': 106,
-        'objective': 'binary',
-        'max_depth': -1,
-        'learning_rate': 0.006883242363721497,
-        "boosting_type": "gbdt",
-        "bagging_seed": 11,
-        "metric": 'auc',
-        "verbosity": -1,
-        'reg_alpha': 0.3899927210061127,
-        'reg_lambda': 0.6485237330340494,
-        'random_state': 47
-      }
+      # params = {
+      #   'num_leaves': 491,
+      #   'min_child_weight': 0.03454472573214212,
+      #   'feature_fraction': 0.3797454081646243,
+      #   'bagging_fraction': 0.4181193142567742,
+      #   'min_data_in_leaf': 106,
+      #   'objective': 'binary',
+      #   'max_depth': -1,
+      #   'learning_rate': 0.006883242363721497,
+      #   "boosting_type": "gbdt",
+      #   "bagging_seed": 11,
+      #   "metric": 'auc',
+      #   "verbosity": -1,
+      #   'reg_alpha': 0.3899927210061127,
+      #   'reg_lambda': 0.6485237330340494,
+      #   'random_state': 47
+      # }
 
       lgbclf=lgb.LGBMClassifier(**params)
 
@@ -1635,16 +1696,16 @@ def full_train_by_lgbm(normalized_train_X,train_y,best_parameter_dict=None,model
     lgbclf=lgb.LGBMClassifier(**params)
 
   else:
-    # params={
-    #   'num_leaves':512,
-    #   'n_estimators':512,
-    #   'max_depth':9,
-    #   'learning_rate':0.064,
-    #   'subsample':0.85,
-    #   'colsample_bytree':0.85,
-    #   'boosting_type':'gbdt',
-    #   'reg_alpha':0.3
-    # }
+    params={
+      'num_leaves':512,
+      'n_estimators':512,
+      'max_depth':9,
+      'learning_rate':0.064,
+      'subsample':0.85,
+      'colsample_bytree':0.85,
+      'boosting_type':'gbdt',
+      'reg_alpha':0.3
+    }
 
     # params={
     #   "num_leaves":512,
@@ -1659,23 +1720,23 @@ def full_train_by_lgbm(normalized_train_X,train_y,best_parameter_dict=None,model
     #   "metric":"AUC"
     # }
 
-    params = {
-      'num_leaves': 491,
-      'min_child_weight': 0.03454472573214212,
-      'feature_fraction': 0.3797454081646243,
-      'bagging_fraction': 0.4181193142567742,
-      'min_data_in_leaf': 106,
-      'objective': 'binary',
-      'max_depth': -1,
-      'learning_rate': 0.006883242363721497,
-      "boosting_type": "gbdt",
-      "bagging_seed": 11,
-      "metric": 'auc',
-      "verbosity": -1,
-      'reg_alpha': 0.3899927210061127,
-      'reg_lambda': 0.6485237330340494,
-      'random_state': 47
-    }
+    # params = {
+    #   'num_leaves': 491,
+    #   'min_child_weight': 0.03454472573214212,
+    #   'feature_fraction': 0.3797454081646243,
+    #   'bagging_fraction': 0.4181193142567742,
+    #   'min_data_in_leaf': 106,
+    #   'objective': 'binary',
+    #   'max_depth': -1,
+    #   'learning_rate': 0.006883242363721497,
+    #   "boosting_type": "gbdt",
+    #   "bagging_seed": 11,
+    #   "metric": 'auc',
+    #   "verbosity": -1,
+    #   'reg_alpha': 0.3899927210061127,
+    #   'reg_lambda': 0.6485237330340494,
+    #   'random_state': 47
+    # }
 
     lgbclf=lgb.LGBMClassifier(**params)
 
@@ -1811,8 +1872,6 @@ def new_feature_label_encoded_year_month_day(numerical_df):
   ['amsterdam', 'paris', 'tokyo']
   le.transform(['tokyo', 'tokyo', 'paris'])
 
-
-
   df['DT_M']=(df['DT_M'].dt.year-2017)*12+df['DT_M'].dt.month 
   return df
 
@@ -1838,6 +1897,161 @@ def test_to_datetime_with_unit_s_argument(numerical_df):
   # 2987111.00   1970-01-02 00:33:03
   # 2987261.00   1970-01-02 01:08:12
 
+def investigate_TransactionID_frequency_and_isFraud_frequency(csv_df):
+  # print('csv_df',csv_df)
+  #        TransactionID  TransactionDT  TransactionAmt  dist1  dist2     C1  \
+  # 13285     2987031.00       86998.00          363.89  13.00    nan   1.00   
+  # 483       2987111.00       88383.00           18.19    nan 109.00   1.00   
+  print('list(csv_df["TransactionID"]))',len(list(csv_df["TransactionID"])))
+  print(Counter(list(csv_df["TransactionID"])))
+
+def investigate_correlation_in_features(numerical_train_df):
+  corr=skewness_managed_numerical_train_df.corr()
+
+  c1 = corr.abs().unstack()
+  res=c1.sort_values(ascending = False).reset_index()
+  res2=c1.sort_values(ascending = True).reset_index()
+  # with pd.option_context('display.max_rows',100000):
+  #   print('res',res.reset_index())
+  #                  level_0         level_1    0
+  #   0                DT_M            DT_M 1.00
+  #   1                V116            V116 1.00
+  #   2                V106            V106 1.00
+  # with pd.option_context('display.max_rows',100000):
+  #   print('res2',res2)
+
+  duplicated_list=[]
+  for i in range(res.shape[0]):
+    # print(res.iloc[i,:])
+    # level_0    DT_M
+    # level_1    DT_M
+    # 0          1.00
+    
+    # ================================================================================
+    first_column_name=res.iloc[i,:]["level_0"]
+    second_column_name=res.iloc[i,:]["level_1"]
+    # print("first_column_name",first_column_name)
+    # print("second_column_name",second_column_name)
+    # first_column_name DT_M
+    # second_column_name DT_M
+    
+    # ================================================================================
+    # Sort for consistent order
+
+    consistent_order_list=[first_column_name,second_column_name]
+    consistent_order_list.sort()
+    # print('consistent_order_list',consistent_order_list)
+
+    # ================================================================================
+    filtered_row=res[(res['level_0']==consistent_order_list[0])&(res['level_1']==consistent_order_list[1])]
+    
+    duplicated_list.append(filtered_row)
+
+  concat_duplicated_list=pd.concat(duplicated_list)
+  # print('concat_duplicated_list',concat_duplicated_list)
+
+  # ================================================================================
+  # Pickle
+  # "Correlation in features" ~ "Correlation in features"
+
+  with open('./pickles/concat_duplicated_list.pkl','wb') as f:
+    pickle.dump(concat_duplicated_list,f)
+  with open('./pickles/concat_duplicated_list.pkl','rb') as f:
+    concat_duplicated_list=pickle.load(f)
+
+  concat_duplicated_list=concat_duplicated_list.drop_duplicates(keep='first')
+  concat_duplicated_list=concat_duplicated_list[concat_duplicated_list['level_0']!=concat_duplicated_list['level_1']]
+
+  fn='./results_csv/numerical_data_features_correlation.csv'
+  concat_duplicated_list.to_csv(fn,sep=',',encoding='utf-8',index=False)
+
+  # with pd.option_context('display.max_rows',100000):
+  #   print('concat_duplicated_list',concat_duplicated_list)
+
+def visualize_correlation_in_features(numerical_train_df):
+  corr=numerical_train_df.corr()
+  fig,ax=plt.subplots(figsize=(15,15))
+  aa=ax.matshow(corr,cmap=plt.get_cmap('Reds'))
+  fig.colorbar(aa,ax=ax)
+  plt.xticks(range(len(corr.columns)), corr.columns,rotation=90,fontsize=3)
+  plt.yticks(range(len(corr.columns)), corr.columns,fontsize=3)
+  fig.savefig('correlation_features.png',dpi=800)
+  plt.close(fig)    # close the figure window
+  # plt.show()
+
+def find_columns_to_be_removed_which_has_high_correlation():
+
+  # ================================================================================
+  # Very strong correlation features
+
+  nan_percent_df=pd.read_csv('/mnt/external_disk/Companies/side_project/Kaggle/00001_ieee-fraud-detection/my_code/src/results_csv/nan_percent.csv',encoding='utf-8')
+  pre_sale=pd.read_csv('/mnt/external_disk/Companies/side_project/Kaggle/00001_ieee-fraud-detection/my_code/src/results_csv/numerical_data_features_correlation.csv',encoding='utf-8')
+  # print('pre_sale',pre_sale)
+  #       level_0 level_1    0
+  # 0        V101     V95 1.00
+  # 1        V279    V293 1.00
+  # 2         C12      C7 1.00
+
+  strong_correlation_pairs_df=pre_sale[pre_sale.iloc[:,2]>=0.8]
+
+
+  to_be_dropped_columns=[]
+  for i in range(strong_correlation_pairs_df.shape[0]):
+    first_column_name=strong_correlation_pairs_df.iloc[i,0]
+    second_column_name=strong_correlation_pairs_df.iloc[i,1]
+    # print("first_column_name",first_column_name)
+    # print("second_column_name",second_column_name)
+    # first_column_name V101
+    # second_column_name V95
+
+    try:
+      first_column_name_nan_percent=list(nan_percent_df[nan_percent_df["column_name"]==first_column_name]["nan_percent"])[0]
+    except:
+      # print('first_column_name',first_column_name)
+      # print(traceback.format_exc())
+      first_column_name_nan_percent=0.0
+    
+    try:
+      second_column_name_nan_percent=list(nan_percent_df[nan_percent_df["column_name"]==second_column_name]["nan_percent"])[0]
+    except:
+      # print('second_column_name',second_column_name)
+      # print(traceback.format_exc())
+      second_column_name_nan_percent=0.0
+    
+    # print("first_column_name_nan_percent",first_column_name_nan_percent)
+    # print("second_column_name_nan_percent",second_column_name_nan_percent)
+    # first_column_name_nan_percent [0.05317167]
+    # second_column_name_nan_percent [0.05317167]
+
+    try:
+      if first_column_name_nan_percent<=second_column_name_nan_percent:
+        drop_column=second_column_name
+      else:
+        drop_column=first_column_name
+    except:
+      print(traceback.format_exc())
+      continue
+    
+    to_be_dropped_columns.append(drop_column)
+    
+  to_be_dropped_columns=list(OrderedDict.fromkeys(to_be_dropped_columns))
+  # print('to_be_dropped_columns',to_be_dropped_columns)
+  # ['V95', 'V293', 'C7', 'V101', 'V97', 'V295', 'V132', 'V96', 'C8', 'C11', 'V134', 'V133', 'C2', 'V316', 'V318', 'V126', 'V317', 'V103', 'V18', 'C6', 'V296', 'V128', 'V16', 'V127', 'V32', 'C12', 'V308', 'V102', 'V306', 'V105', 'V106', 'C4', 'V28', 'V307', 'V11', 'V49', 'V292', 'V22', 'V72', 'V93', 'V58', 'V304', 'C14', 'V70', 'V91', 'V34', 'V94', 'V33', 'C10', 'V30', 'V299', 'V74', 'V81', 'V60', 'V52', 'V43', 'V21', 'V294', 'V64', 'V40', 'V71', 'V73', 'V321', 'V85', 'V63', 'V137', 'V57', 'V36', 'V280', 'V51', 'V79', 'V301', 'V13', 'C9', 'V113', 'V298', 'V129', 'V54', 'V76', 'V315', 'V104', 'V50', 'V90', 'V31', 'V5', 'V92', 'V69', 'V42', 'V20', 'V45', 'V84', 'V62', 'V289', 'V311', 'V83', 'V303', 'V131', 'V119', 'V38', 'V39', 'V100', 'V99', 'V48', 'V136', 'V80', 'V87', 'V59', 'V130', 'V26', 'V9', 'V287', 'V67', 'V24', 'V125', 'V110', 'D2', 'V17', 'V116']
+
+def discard_high_correlation_columns(csv_train,train_columns_to_be_dropped):
+  # print("csv_train",csv_train)
+  # print("train_columns_to_be_dropped",train_columns_to_be_dropped)
+  
+  for one_column_name in list(csv_train.columns):
+    if one_column_name in train_columns_to_be_dropped:
+      del csv_train[one_column_name]
+
+  # print("csv_train",csv_train)
+  
+  return csv_train
+
+# ================================================================================
+find_columns_to_be_removed_which_has_high_correlation()
 
 # ================================================================================
 # Load csv file
@@ -1848,18 +2062,54 @@ csv_test=load_csv_files_test()
 # print("csv_test",csv_test)
 
 # ================================================================================
-# check NaN in column and row
-# Not use this function
+# 558investigate_TransactionID_frequency_and_isFraud_frequency(csv_train)
 
-# nan_ratio_df=check_nan(csv_train_transaction_original,create_image=CREATE_IMAGE_ON_NAN_RATIO)
+# ================================================================================
+# check NaN in column and row
+
+train_nan_ratio_df,train_columns_to_be_dropped=check_nan(csv_train,NAN_CRITERION,create_image=CREATE_IMAGE_ON_NAN_RATIO)
+test_columns_to_be_dropped=list(map(lambda x:x.replace("id_","id-"),train_columns_to_be_dropped))
+# print('nan_ratio_df',nan_ratio_df)
 
 # ================================================================================
 # Discard columns whose NaNs are too abundant
-# Not use this function
 
-# under40_nan_df,categorical_features,numerical_features=discard_40percent_nan_columns(csv_train_transaction_original,nan_ratio_df)
-# del csv_train_transaction_original
-# gc.collect()
+csv_train=discard_nan_columns(csv_train,train_columns_to_be_dropped)
+csv_test=discard_nan_columns(csv_test,test_columns_to_be_dropped)
+# print("csv_train",csv_train)
+# print("csv_test",csv_test)
+
+# ================================================================================
+# Discard columns (high correlation)
+
+train_columns_to_be_dropped=['V95', 'V293', 'C7', 'V101', 'V97', 'V295', 'V132', 'V96', 'C8', 'C11', 'V134', 'V133', 'C2', 'V316', 'V318', 'V126', 'V317', 'V103', 'V18', 'C6', 'V296', 'V128', 'V16', 'V127', 'V32', 'C12', 'V308', 'V102', 'V306', 'V105', 'V106', 'C4', 'V28', 'V307', 'V11', 'V49', 'V292', 'V22', 'V72', 'V93', 'V58', 'V304', 'C14', 'V70', 'V91', 'V34', 'V94', 'V33', 'C10', 'V30', 'V299', 'V74', 'V81', 'V60', 'V52', 'V43', 'V21', 'V294', 'V64', 'V40', 'V71', 'V73', 'V321', 'V85', 'V63', 'V137', 'V57', 'V36', 'V280', 'V51', 'V79', 'V301', 'V13', 'C9', 'V113', 'V298', 'V129', 'V54', 'V76', 'V315', 'V104', 'V50', 'V90', 'V31', 'V5', 'V92', 'V69', 'V42', 'V20', 'V45', 'V84', 'V62', 'V289', 'V311', 'V83', 'V303', 'V131', 'V119', 'V38', 'V39', 'V100', 'V99', 'V48', 'V136', 'V80', 'V87', 'V59', 'V130', 'V26', 'V9', 'V287', 'V67', 'V24', 'V125', 'V110', 'D2', 'V17', 'V116']
+
+csv_train=discard_high_correlation_columns(csv_train,train_columns_to_be_dropped)
+csv_test=discard_high_correlation_columns(csv_test,train_columns_to_be_dropped)
+
+# # ================================================================================
+# # Load pickle 
+# # "Load csv file" ~ "Discard columns whose NaNs are too abundant"
+
+# # with open('./pickles/csv_train_small.pkl','wb') as f:
+# #   pickle.dump(csv_train,f)
+# with open('./pickles/csv_train_small.pkl','rb') as f:
+#   csv_train=pickle.load(f)
+
+# # with open('./pickles/csv_test_small.pkl','wb') as f:
+# #   pickle.dump(csv_test,f)
+# with open('./pickles/csv_test_small.pkl','rb') as f:
+#   csv_test=pickle.load(f)
+
+# # with open('./pickles/csv_train_full.pkl','wb') as f:
+# #   pickle.dump(csv_train,f)
+# # with open('./pickles/csv_train_full.pkl','rb') as f:
+# #   csv_train=pickle.load(f)
+
+# # with open('./pickles/csv_test_full.pkl','wb') as f:
+# #   pickle.dump(csv_test,f)
+# # with open('./pickles/csv_test_full.pkl','rb') as f:
+# #   csv_test=pickle.load(f)
 
 # ================================================================================
 # Separate full column data into categorical data and numerical data 
@@ -1880,12 +2130,12 @@ gc.collect()
 # ================================================================================
 # Inspect time range
 
-numerical_train_df=inspect_time_range(numerical_train_df)
+# numerical_train_df=inspect_time_range(numerical_train_df)
 
 # ================================================================================
 # Inspect time range
 
-numerical_train_df=test_to_datetime_with_unit_s_argument(numerical_train_df)
+# numerical_train_df=test_to_datetime_with_unit_s_argument(numerical_train_df)
 
 # ================================================================================
 # Convert time delta
@@ -1898,7 +2148,7 @@ numerical_test_df=convert_time_delte(numerical_test_df)
 # ================================================================================
 # Insert new feature (year+month+day in label encoding form)
 
-numerical_train_df=new_feature_label_encoded_year_month_day(numerical_train_df)
+# numerical_train_df=new_feature_label_encoded_year_month_day(numerical_train_df)
 # new_feature_label_encoded_year_month_day
 
 # ================================================================================
@@ -1906,13 +2156,15 @@ numerical_train_df=new_feature_label_encoded_year_month_day(numerical_train_df)
 
 imputed_categorical_train_df=impute_categorical_data_by_mode(categorical_train_df)
 imputed_categorical_test_df=impute_categorical_data_by_mode(categorical_test_df)
+# print('imputed_categorical_train_df',imputed_categorical_train_df)
+# print('imputed_categorical_test_df',imputed_categorical_test_df)
 
 del categorical_train_df
 del categorical_test_df
 gc.collect()
 
 # ================================================================================
-imputed_categorical_train_df=categorical_other(imputed_categorical_test_df)
+imputed_categorical_train_df=categorical_other(imputed_categorical_train_df)
 imputed_categorical_test_df=categorical_other(imputed_categorical_test_df)
 # print("imputed_categorical_train_df",imputed_categorical_train_df)
 # print("imputed_categorical_test_df",imputed_categorical_test_df)
@@ -1920,11 +2172,11 @@ imputed_categorical_test_df=categorical_other(imputed_categorical_test_df)
 # ================================================================================
 # Combine feature to create new features
 
-first_new_feature_added=encode_CB('card1','addr1',imputed_categorical_train_df)
-categorical_train_df=encode_CB('card1_addr1','P_emaildomain',first_new_feature_added)
+first_new_feature_added=encode_CB('addr1','addr2',imputed_categorical_train_df)
+imputed_categorical_train_df=encode_CB('addr1_addr2','P_emaildomain',first_new_feature_added)
 
-first_new_feature_added=encode_CB('card1','addr1',imputed_categorical_test_df)
-categorical_test_df=encode_CB('card1_addr1','P_emaildomain',first_new_feature_added)
+first_new_feature_added=encode_CB('addr1','addr2',imputed_categorical_test_df)
+imputed_categorical_test_df=encode_CB('addr1_addr2','P_emaildomain',first_new_feature_added)
 
 # ================================================================================
 # Impute null of numerical data by MICE
@@ -1959,6 +2211,43 @@ skewness_managed_numerical_test_df=imputed_numerical_test_df
 del imputed_numerical_train_df
 del imputed_numerical_test_df
 gc.collect()
+
+# ================================================================================
+# pickle
+# "Separate full column data into categorical data and numerical data" ~ "Manage skewness"
+
+
+# del csv_train
+# del csv_test
+# gc.collect()
+
+# # with open('./pickles/skewness_managed_numerical_train_df.pkl','wb') as f:
+# #   pickle.dump(skewness_managed_numerical_train_df,f)
+# with open('./pickles/skewness_managed_numerical_train_df.pkl','rb') as f:
+#   skewness_managed_numerical_train_df=pickle.load(f)
+
+# # with open('./pickles/imputed_categorical_train_df.pkl','wb') as f:
+# #   pickle.dump(imputed_categorical_train_df,f)
+# with open('./pickles/imputed_categorical_train_df.pkl','rb') as f:
+#   imputed_categorical_train_df=pickle.load(f)
+
+# # ================================================================================
+# # with open('./pickles/skewness_managed_numerical_test_df.pkl','wb') as f:
+# #   pickle.dump(skewness_managed_numerical_test_df,f)
+# with open('./pickles/skewness_managed_numerical_test_df.pkl','rb') as f:
+#   skewness_managed_numerical_test_df=pickle.load(f)
+
+# # with open('./pickles/imputed_categorical_test_df.pkl','wb') as f:
+# #   pickle.dump(imputed_categorical_test_df,f)
+# with open('./pickles/imputed_categorical_test_df.pkl','rb') as f:
+#   imputed_categorical_test_df=pickle.load(f)
+
+# ================================================================================
+# Correlation in features
+
+# visualize_correlation_in_features(skewness_managed_numerical_train_df)
+
+# investigate_correlation_in_features(skewness_managed_numerical_train_df)
 
 # ================================================================================
 # Compress data
